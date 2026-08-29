@@ -1,20 +1,53 @@
 import sys
 
-from llm_agent import run_agent
+from multiagent_graph import graph
 
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-question = """
-삼성전자 매수한다고 가정할 때
-손절가와 목표가를 알려줘.
-내 계좌는 5천만원이고
-한 번 거래에서 최대 1%까지만 손실을 감수할게.
-"""
+initial_state = {
 
-answer = run_agent(
-    question
-)
+    "ticker":
+        "005930.KS",
 
-print("\nFinal Answer:")
-print(answer)
+    "account_size":
+        50000000,
+
+    "market_data":
+        None,
+
+    "technical_result":
+        None,
+
+    "fundamental_result":
+        None,
+
+    "news_result":
+        None,
+
+    "flow_result":
+        None,
+
+    "merged_result":
+        None,
+
+    "ml_result":
+        None,
+
+    "risk_result":
+        None,
+
+    "final_decision":
+        None,
+}
+
+
+for event in graph.stream(
+    initial_state
+):
+
+    print(
+        "\n===================="
+    )
+
+    print(event)
