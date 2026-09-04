@@ -1,0 +1,33 @@
+[project]
+name = "agentic-ai-langchain"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "grandalf>=0.8",
+    "joblib>=1.5.3",
+    "langchain>=1.3.18",
+    "langchain-openai>=1.6.0",
+    "langgraph>=1.2.11",
+    "lightgbm>=4.7.0",
+    "numpy>=2.5.2",
+    "openai>=3.5.0",
+    "pandas>=3.0.5",
+    "pyarrow>=21.0.0",
+    "pytest>=9.1.1",
+    "python-dotenv>=1.2.3",
+    "reportlab>=5.0.1",
+    "requests>=2.34.2",
+    "scikit-learn>=1.9.0",
+    "streamlit>=1.62.0",
+    "yfinance>=1.7.0",
+]
+
+[project.scripts]
+agentic-ai-langchain = "agentic_ai_langchain:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"

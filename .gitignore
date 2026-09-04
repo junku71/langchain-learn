@@ -1,0 +1,30 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Local secrets
+.env
+.kis_token.json
+
+# Downloaded KIS symbol master cache
+data/tickers/
+data/economy/
+ml/models/
+data/ml/market_panel.csv
+data/ml/flow_history.csv
+data/ml/fundamental_history.csv
+data/ml/raw/
+data/ml/processed/
+data/ml/reports/
+
+# Live-trading runtime state and local test scratch
+data/trading/
+.test_runtime/
+.test_tmp*/

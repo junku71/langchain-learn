@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>LIVE_TRADING_FLOW.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Markdown PDF CSS
+ */
+
+ body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> or <div class="page"></div> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+
+<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
+          ? 'dark'
+          : 'default'
+    });
+  </script>
+<h1 id="일일-신규-매수-및-1분-포지션-감시-시스템-제안">일일 신규 매수 및 1분 포지션 감시 시스템 제안</h1>
+<h2 id="1-목표">1. 목표</h2>
+<p>이 시스템은 두 개의 독립적인 실행 축을 하나의 거래 운영 서비스로 묶는다.</p>
+<ol>
+<li><strong>개장 신규 매수 축</strong>: 매 거래일 장 시작 시 후보 종목을 분석하고 리스크·포트폴리오 제한을 통과한 종목만 신규 매수한다.</li>
+<li><strong>장중 포지션 감시 축</strong>: 정규장 동안 1분마다 보유 포지션을 조회하고 손절, 익절 및 trailing stop 조건을 감시해 자동 매도한다.</li>
+</ol>
+<p>두 축은 브로커 포지션, 주문 상태, 리스크 한도와 거래 로그를 공유한다. 개장 매수 그래프와 1분 감시 그래프는 한 번 호출될 때 반드시 종료되는 유한 작업으로 설계하고, 반복 실행은 LangGraph 바깥의 스케줄러가 담당한다.</p>
+<blockquote>
+<p>KRX 정규시장 거래시간은 통상 Asia/Seoul 기준 09:00~15:30이다. 휴일, 연말 휴장, 임시휴장 및 개장시간 변경일은 단순 평일 계산이 아니라 거래소 캘린더로 판정해야 한다. <a href="https://global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T1.jsp">KRX Trading Hours and Holidays</a></p>
+</blockquote>
+<h2 id="2-권장-운영-타임라인">2. 권장 운영 타임라인</h2>
+<table>
+<thead>
+<tr>
+<th>시각(Asia/Seoul)</th>
+<th>작업</th>
+<th>설명</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>08:40~08:55</td>
+<td><code>pre_open_prepare</code></td>
+<td>거래일 확인, API·토큰·잔고·기존 주문 동기화, 전일 데이터와 모델 freshness 확인</td>
+</tr>
+<tr>
+<td>08:55</td>
+<td><code>candidate_snapshot</code></td>
+<td>전일 종가 기준 후보와 모델 점수를 고정하고 당일 실행 ID 생성</td>
+</tr>
+<tr>
+<td>09:00~09:05</td>
+<td><code>opening_buy_graph</code></td>
+<td>개장 호가 안정화 정책에 따라 신규 분석·매수 실행</td>
+</tr>
+<tr>
+<td>09:00~15:30</td>
+<td><code>position_monitor_graph</code></td>
+<td>1분마다 보유 종목 시세와 주문 상태를 감시</td>
+</tr>
+<tr>
+<td>15:30 이후</td>
+<td><code>post_close_reconcile</code></td>
+<td>미체결 주문 처리, 브로커 잔고 대조, 일일 손익·거래·오류 보고</td>
+</tr>
+</tbody>
+</table>
+<p>09:00 정확히 시장가 주문을 내면 시가 단일가 직후 변동성과 슬리피지가 클 수 있다. 운영 설정으로 <code>ENTRY_DELAY_MINUTES=0~5</code>를 두고 기본값을 5분으로 시작한 뒤 검증 결과에 따라 조정하는 방식을 권장한다.</p>
+<h2 id="3-전체-시스템-flow">3. 전체 시스템 Flow</h2>
+<pre><code class="language-mermaid"><div class="mermaid">flowchart TD
+    CLOCK["Scheduler<br/>Asia/Seoul"] --> CAL{KRX 거래일인가?}
+    CAL -. "아니오" .-> SLEEP[다음 세션까지 대기]
+    CAL -. "예" .-> PHASE{현재 세션 단계}
+
+    PHASE -. "개장 전" .-> PRE[Pre-open 준비 그래프]
+    PHASE -. "진입 시각" .-> BUY[신규 종목 매수 그래프]
+    PHASE -. "정규장 / 매 1분" .-> MON[포지션 감시 그래프]
+    PHASE -. "장 마감 후" .-> EOD[마감 정산 그래프]
+
+    PRE --> STORE[(Persistent State Store)]
+    BUY <--> STORE
+    MON <--> STORE
+    EOD <--> STORE
+
+    BUY <--> BROKER[KIS 또는 Paper Broker]
+    MON <--> BROKER
+    EOD <--> BROKER
+
+    BUY --> AUDIT[(Order/Audit Log)]
+    MON --> AUDIT
+    EOD --> REPORT[일일 리포트 및 알림]
+
+    SLEEP --> CLOCK
+    PRE --> CLOCK
+    BUY --> CLOCK
+    MON --> CLOCK
+    EOD --> CLOCK
+
+    classDef scheduler fill:#dbeafe,stroke:#2563eb,color:#172554;
+    classDef workflow fill:#ede9fe,stroke:#7c3aed,color:#2e1065;
+    classDef external fill:#fef3c7,stroke:#d97706,color:#451a03;
+    classDef storage fill:#dcfce7,stroke:#16a34a,color:#052e16;
+    class CLOCK,CAL,PHASE,SLEEP scheduler;
+    class PRE,BUY,MON,EOD workflow;
+    class BROKER external;
+    class STORE,AUDIT,REPORT storage;
+</div></code></pre>
+<h2 id="4-스케줄러-설계">4. 스케줄러 설계</h2>
+<p>스케줄러는 LangGraph 외부에서 다음 유한 그래프를 호출한다.</p>
+<table>
+<thead>
+<tr>
+<th>Job</th>
+<th>실행 주기</th>
+<th>중복 실행 정책</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pre_open_prepare</code></td>
+<td>거래일 08:40 1회</td>
+<td><code>trade_date</code> 기준 1회</td>
+</tr>
+<tr>
+<td><code>opening_buy_graph</code></td>
+<td>거래일 설정된 진입 시각 1회</td>
+<td><code>trade_date + strategy_version</code> 기준 1회</td>
+</tr>
+<tr>
+<td><code>position_monitor_graph</code></td>
+<td>정규장 중 매분</td>
+<td><code>trade_date + minute_bucket</code> 기준 1회</td>
+</tr>
+<tr>
+<td><code>post_close_reconcile</code></td>
+<td>장 마감 후 1회</td>
+<td><code>trade_date</code> 기준 1회</td>
+</tr>
+</tbody>
+</table>
+<p>권장 구현 후보는 APScheduler, Celery Beat, 운영체제 스케줄러 또는 별도 asyncio 서비스다. 중요한 것은 스케줄러가 죽었다가 재시작되어도 persistent store에서 마지막 성공 시각을 읽고 안전하게 복구하는 것이다.</p>
+<p>1분 monitor를 다음과 같은 LangGraph 내부 무한 루프로 구현하지 않는다.</p>
+<pre class="hljs"><code><div>monitor → sleep(60초) → monitor → ...
+</div></code></pre>
+<p>이 구조는 배포, 취소, 장애 복구, timeout 및 중복 실행 제어가 어렵다. 대신 매분 독립적인 짧은 그래프 실행으로 만든다.</p>
+<h2 id="5-pre-open-준비-그래프">5. Pre-open 준비 그래프</h2>
+<pre><code class="language-mermaid"><div class="mermaid">flowchart TD
+    START([START]) --> LOCK[세션 lock 획득]
+    LOCK --> CAL{오늘이 KRX 거래일?}
+    CAL -. "아니오" .-> SKIP[SKIPPED 기록]
+    CAL -. "예" .-> HEALTH[API·토큰·DB health check]
+    HEALTH --> HOK{모든 필수 서비스 정상?}
+    HOK -. "아니오" .-> HALT[신규 매수 비활성화 + 알림]
+    HOK -. "예" .-> RECON[브로커 잔고·포지션·미체결 주문 대조]
+    RECON --> FRESH[모델·feature panel freshness 확인]
+    FRESH --> FOK{전일 세션 기준 사용 가능?}
+    FOK -. "아니오" .-> HALT
+    FOK -. "예" .-> CAND[시장별 예측 후보 snapshot]
+    CAND --> BUDGET[당일 손실한도·가용현금·신규 slot 계산]
+    BUDGET --> READY[SESSION_READY 저장]
+    READY --> END([END])
+    SKIP --> END
+    HALT --> END
+</div></code></pre>
+<h3 id="pre-open-산출물">Pre-open 산출물</h3>
+<pre class="hljs"><code><div>session_id
+trade_date
+market_open_at / market_close_at
+strategy_version / model_version
+feature_as_of
+candidate_snapshot
+starting_cash / starting_equity
+available_new_position_slots
+daily_loss_limit
+buy_enabled
+health_check_result
+</div></code></pre>
+<p>모델은 당일 아직 확정되지 않은 종가나 수급을 사용하지 않는다. 개장 매수 후보는 원칙적으로 직전 완료 거래일의 feature panel과 모델로 고정한다.</p>
+<h2 id="6-신규-종목-매수-langgraph">6. 신규 종목 매수 LangGraph</h2>
+<p>기존 <code>multiagent_graph.py</code>의 분석 축을 재사용하되, 여러 후보를 순차 또는 제한된 병렬도로 평가하는 상위 coordinator를 둔다.</p>
+<pre><code class="language-mermaid"><div class="mermaid">flowchart TD
+    START([START]) --> SESSION[SESSION_READY 로드]
+    SESSION --> GUARD0{buy_enabled이고<br/>정규장인가?}
+    GUARD0 -. "아니오" .-> SKIP[매수 생략]
+    GUARD0 -. "예" .-> RECON[잔고·포지션·미체결 주문 재조회]
+    RECON --> LOAD[시장별 후보 snapshot 로드]
+    LOAD --> DEDUPE[보유·미체결·당일 처리 종목 제외]
+    DEDUPE --> NEXT{다음 후보가 있고<br/>slot·현금이 남았나?}
+
+    NEXT -. "아니오" .-> SUMMARY[매수 실행 요약]
+    NEXT -. "예" .-> QUOTE[실시간 호가·거래정지 상태 조회]
+    QUOTE --> TRADEABLE{거래 가능하고<br/>가격이 유효한가?}
+    TRADEABLE -. "아니오" .-> REJECT_CAND[후보 거절 기록]
+    TRADEABLE -. "예" .-> ANALYZE[종목 분석 Subgraph]
+
+    ANALYZE --> ML{ML 확률·시장내 순위<br/>기준 통과?}
+    ML -. "아니오" .-> REJECT_CAND
+    ML -. "예" .-> RISK[ATR 기반 position sizing]
+    RISK --> RISK_OK{리스크 승인?}
+    RISK_OK -. "아니오" .-> REJECT_CAND
+    RISK_OK -. "예" .-> PORT[포트폴리오 guard]
+    PORT --> PORT_OK{종목·섹터·총투자<br/>한도 통과?}
+    PORT_OK -. "아니오" .-> REJECT_CAND
+    PORT_OK -. "예" .-> IDEM[주문 idempotency key 확보]
+    IDEM --> ORDER[BUY 주문 제출]
+    ORDER --> ACK{브로커 주문 접수?}
+    ACK -. "아니오" .-> ORDER_FAIL[실패·재시도 가능성 기록]
+    ACK -. "예" .-> FILL[체결 상태 확인]
+    FILL --> FILLED{전량 또는 부분 체결?}
+    FILLED -. "미체결" .-> PENDING[미체결 정책 적용]
+    FILLED -. "부분/전량" .-> POSITION[실제 체결수량으로 포지션 저장]
+    POSITION --> PROTECT[stop·target·trailing 상태 저장]
+
+    PROTECT --> NEXT
+    REJECT_CAND --> NEXT
+    ORDER_FAIL --> NEXT
+    PENDING --> NEXT
+    SUMMARY --> END([END])
+    SKIP --> END
+</div></code></pre>
+<h3 id="종목-분석-subgraph">종목 분석 Subgraph</h3>
+<pre><code class="language-mermaid"><div class="mermaid">flowchart LR
+    MARKET[실시간 가격 + 전일 데이터] --> TECH[technical]
+    MARKET --> FUND[fundamental]
+    MARKET --> NEWS[news]
+    MARKET --> FLOW[flow]
+    TECH --> MERGE[merge]
+    FUND --> MERGE
+    NEWS --> MERGE
+    FLOW --> MERGE
+    MERGE --> ML[ml_filter]
+</div></code></pre>
+<h3 id="매수-conditional-edge">매수 Conditional Edge</h3>
+<table>
+<thead>
+<tr>
+<th>출발 노드</th>
+<th>조건</th>
+<th>통과 경로</th>
+<th>거절 경로</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>session_guard</code></td>
+<td>거래일·정규장·buy enabled</td>
+<td>후보 로드</td>
+<td>매수 생략</td>
+</tr>
+<tr>
+<td><code>tradeability_guard</code></td>
+<td>거래정지 아님, 유효 호가, 가격제한·이상 스프레드 정책 통과</td>
+<td>분석</td>
+<td>후보 거절</td>
+</tr>
+<tr>
+<td><code>ml_guard</code></td>
+<td>확률과 시장 내 순위 기준 통과</td>
+<td>리스크</td>
+<td>후보 거절</td>
+</tr>
+<tr>
+<td><code>risk_guard</code></td>
+<td>수량 &gt; 0, 손절가 유효, 일일 위험예산 이내</td>
+<td>포트폴리오 검사</td>
+<td>후보 거절</td>
+</tr>
+<tr>
+<td><code>portfolio_guard</code></td>
+<td>단일 종목·섹터·총 투자비중 이내</td>
+<td>주문</td>
+<td>후보 거절</td>
+</tr>
+<tr>
+<td><code>order_ack_guard</code></td>
+<td>주문번호 수신</td>
+<td>체결 확인</td>
+<td>오류 정책</td>
+</tr>
+</tbody>
+</table>
+<h3 id="주문-정책-제안">주문 정책 제안</h3>
+<ul>
+<li>진입 주문은 초기 운영에서 시장가보다 가격 제한이 있는 주문을 우선 고려한다.</li>
+<li>주문 전후 브로커 잔고를 다시 조회한다.</li>
+<li>주문 키는 <code>trade_date + strategy + ticker + side</code>로 만들어 중복 매수를 방지한다.</li>
+<li>부분 체결은 실제 체결수량을 기준으로 stop/target을 생성한다.</li>
+<li>일정 시간 미체결 주문은 취소하거나 가격을 한정적으로 재산정한다.</li>
+<li>API timeout을 주문 실패로 단정하지 말고 주문내역을 먼저 조회한다.</li>
+</ul>
+<h2 id="7-1분-포지션-감시-langgraph">7. 1분 포지션 감시 LangGraph</h2>
+<p>스케줄러가 정규장 중 매분 한 번씩 호출한다. 한 번의 invocation은 모든 보유 종목을 snapshot으로 읽고 평가한 후 종료한다.</p>
+<pre><code class="language-mermaid"><div class="mermaid">flowchart TD
+    START([START]) --> LOCK[minute bucket lock]
+    LOCK --> SESSION{KRX 정규장인가?}
+    SESSION -. "아니오" .-> SKIP[NOOP 기록]
+    SESSION -. "예" .-> KILL{Global kill switch<br/>활성화?}
+    KILL -. "예" .-> SAFE[신규 매도정책에 따른<br/>안전 처리 + 알림]
+    KILL -. "아니오" .-> ORDERS[기존 미체결 주문 동기화]
+    ORDERS --> POS[브로커 보유 포지션 snapshot]
+    POS --> EMPTY{보유 종목 없음?}
+    EMPTY -. "예" .-> DONE[heartbeat 기록]
+    EMPTY -. "아니오" .-> NEXT{다음 포지션}
+
+    NEXT --> QUOTE[최신 1분 OHLC 또는 quote 조회]
+    QUOTE --> VALID{시세가 최신·유효한가?}
+    VALID -. "아니오" .-> DATA_FAIL[오류 카운트 + stale-price 알림]
+    VALID -. "예" .-> UPDATE[highest_price·trailing stop 갱신]
+
+    UPDATE --> GAP_STOP{시가/현재가가 stop 이하?}
+    GAP_STOP -. "예" .-> SELL_STOP[전량 STOP 매도]
+    GAP_STOP -. "아니오" .-> GAP_TARGET{시가/현재가가 target 이상?}
+    GAP_TARGET -. "예" .-> SELL_TARGET[전량 TARGET 매도]
+    GAP_TARGET -. "아니오" .-> HIT{1분 bar에서<br/>stop/target 충족?}
+
+    HIT -. "둘 다" .-> SELL_CONSERVATIVE[보수적으로 stop 우선]
+    HIT -. "stop만" .-> SELL_STOP
+    HIT -. "target만" .-> SELL_TARGET
+    HIT -. "없음" .-> HOLD[HOLD 상태 저장]
+
+    SELL_STOP --> IDEM[SELL idempotency key]
+    SELL_TARGET --> IDEM
+    SELL_CONSERVATIVE --> IDEM
+    IDEM --> SUBMIT[SELL 주문 제출]
+    SUBMIT --> ACK{주문 접수?}
+    ACK -. "예" .-> FILL[체결/부분체결 동기화]
+    ACK -. "아니오" .-> RETRY{재시도 가능한 오류?}
+    RETRY -. "예" .-> REQUERY[주문내역 재조회 후 제한 재시도]
+    RETRY -. "아니오" .-> ALERT[긴급 알림 + 수동개입 상태]
+
+    FILL --> PERSIST[포지션·주문·PnL 저장]
+    REQUERY --> PERSIST
+    ALERT --> PERSIST
+    HOLD --> PERSIST
+    DATA_FAIL --> PERSIST
+    PERSIST --> NEXT_MORE{남은 포지션?}
+    NEXT_MORE -. "예" .-> NEXT
+    NEXT_MORE -. "아니오" .-> DONE
+    DONE --> END([END])
+    SKIP --> END
+    SAFE --> END
+</div></code></pre>
+<h3 id="1분-감시-판정-순서">1분 감시 판정 순서</h3>
+<p>기존 <code>paper/position_manager.py</code>의 보수적인 체결 가정을 유지하면서 분봉용 메서드를 분리하는 것을 권장한다.</p>
+<pre class="hljs"><code><div>effective_stop = max(fixed_stop, trailing_stop)
+
+1. gap/open &lt;= effective_stop  → 실제 가능한 현재가/호가로 STOP 매도
+2. gap/open &gt;= take_profit     → 실제 가능한 현재가/호가로 TARGET 매도
+3. low &lt;= stop 및 high &gt;= target → 순서를 알 수 없으므로 stop 우선
+4. low &lt;= stop                 → STOP 매도
+5. high &gt;= target              → TARGET 매도
+6. 그 외                       → highest와 trailing stop 갱신 후 HOLD
+</div></code></pre>
+<p>실거래에서는 bar의 stop 가격에 정확히 체결됐다고 가정하면 안 된다. <code>PositionManager</code>는 “매도 사유와 트리거 가격”을 결정하고, 실제 체결가격과 수량은 브로커 체결 조회 결과로 확정해야 한다.</p>
+<h2 id="8-마감-정산-그래프">8. 마감 정산 그래프</h2>
+<pre><code class="language-mermaid"><div class="mermaid">flowchart TD
+    START([START]) --> STOP_BUY[신규 매수 비활성화]
+    STOP_BUY --> OPEN_ORDERS[미체결 주문 조회]
+    OPEN_ORDERS --> POLICY{마감 주문 정책}
+    POLICY -. "취소" .-> CANCEL[미체결 취소]
+    POLICY -. "유지 허용" .-> KEEP[명시적 유지 기록]
+    CANCEL --> RECON
+    KEEP --> RECON[브로커 잔고·체결·포지션 대조]
+    RECON --> PNL[실현·미실현 PnL 계산]
+    PNL --> DATA[당일 시세·수급·feature 갱신 작업 등록]
+    DATA --> REPORT[거래·거절·오류·PnL 리포트]
+    REPORT --> RESET[일일 lock·카운터 종료 처리]
+    RESET --> END([END])
+</div></code></pre>
+<h2 id="9-권장-state-모델">9. 권장 State 모델</h2>
+<h3 id="공통-세션-state">공통 세션 State</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">class</span> <span class="hljs-title class_">TradingSessionState</span>(<span class="hljs-title class_ inherited__">TypedDict</span>):
+    session_id: <span class="hljs-built_in">str</span>
+    trade_date: <span class="hljs-built_in">str</span>
+    timezone: <span class="hljs-built_in">str</span>
+    market_phase: <span class="hljs-built_in">str</span>
+    market_open_at: <span class="hljs-built_in">str</span>
+    market_close_at: <span class="hljs-built_in">str</span>
+    strategy_version: <span class="hljs-built_in">str</span>
+    model_version: <span class="hljs-built_in">int</span>
+    feature_as_of: <span class="hljs-built_in">str</span>
+    buy_enabled: <span class="hljs-built_in">bool</span>
+    kill_switch: <span class="hljs-built_in">bool</span>
+    starting_equity: <span class="hljs-built_in">float</span>
+    daily_realized_pnl: <span class="hljs-built_in">float</span>
+    daily_loss_limit: <span class="hljs-built_in">float</span>
+    error_count: <span class="hljs-built_in">int</span>
+</div></code></pre>
+<h3 id="매수-그래프-state">매수 그래프 State</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">class</span> <span class="hljs-title class_">OpeningBuyState</span>(<span class="hljs-title class_ inherited__">TradingSessionState</span>):
+    candidates: <span class="hljs-built_in">list</span>[<span class="hljs-built_in">dict</span>]
+    current_candidate: <span class="hljs-built_in">dict</span> | <span class="hljs-literal">None</span>
+    quote: <span class="hljs-built_in">dict</span> | <span class="hljs-literal">None</span>
+    analysis_result: <span class="hljs-built_in">dict</span> | <span class="hljs-literal">None</span>
+    ml_result: <span class="hljs-built_in">dict</span> | <span class="hljs-literal">None</span>
+    risk_result: <span class="hljs-built_in">dict</span> | <span class="hljs-literal">None</span>
+    portfolio_result: <span class="hljs-built_in">dict</span> | <span class="hljs-literal">None</span>
+    order_intent: <span class="hljs-built_in">dict</span> | <span class="hljs-literal">None</span>
+    order_result: <span class="hljs-built_in">dict</span> | <span class="hljs-literal">None</span>
+    accepted_orders: <span class="hljs-built_in">list</span>[<span class="hljs-built_in">dict</span>]
+    rejected_candidates: <span class="hljs-built_in">list</span>[<span class="hljs-built_in">dict</span>]
+</div></code></pre>
+<h3 id="감시-그래프-state">감시 그래프 State</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">class</span> <span class="hljs-title class_">PositionMonitorState</span>(<span class="hljs-title class_ inherited__">TradingSessionState</span>):
+    minute_bucket: <span class="hljs-built_in">str</span>
+    positions: <span class="hljs-built_in">list</span>[<span class="hljs-built_in">dict</span>]
+    current_position: <span class="hljs-built_in">dict</span> | <span class="hljs-literal">None</span>
+    minute_bar: <span class="hljs-built_in">dict</span> | <span class="hljs-literal">None</span>
+    effective_stop: <span class="hljs-built_in">float</span> | <span class="hljs-literal">None</span>
+    exit_reason: <span class="hljs-built_in">str</span> | <span class="hljs-literal">None</span>
+    sell_intent: <span class="hljs-built_in">dict</span> | <span class="hljs-literal">None</span>
+    order_result: <span class="hljs-built_in">dict</span> | <span class="hljs-literal">None</span>
+    monitor_results: <span class="hljs-built_in">list</span>[<span class="hljs-built_in">dict</span>]
+</div></code></pre>
+<h2 id="10-상태-저장소와-데이터-모델">10. 상태 저장소와 데이터 모델</h2>
+<p>메모리 객체만 사용하면 프로세스 재시작 시 trailing stop과 주문 상태가 사라진다. 최소한 SQLite, 운영 환경에서는 PostgreSQL 같은 영속 저장소를 권장한다.</p>
+<table>
+<thead>
+<tr>
+<th>테이블/컬렉션</th>
+<th>핵심 키</th>
+<th>저장 내용</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>trading_sessions</code></td>
+<td><code>trade_date</code>, <code>strategy_version</code></td>
+<td>세션 상태, 모델 버전, 시작 자산, kill switch</td>
+</tr>
+<tr>
+<td><code>candidate_snapshots</code></td>
+<td><code>session_id</code>, <code>ticker</code></td>
+<td>후보 점수, 시장 내 순위, 데이터 기준시각</td>
+</tr>
+<tr>
+<td><code>order_intents</code></td>
+<td><code>idempotency_key</code></td>
+<td>주문 전 의사결정, 수량, 제한가격, stop/target</td>
+</tr>
+<tr>
+<td><code>broker_orders</code></td>
+<td><code>broker_order_id</code></td>
+<td>접수·부분체결·전량체결·취소·거절 상태</td>
+</tr>
+<tr>
+<td><code>positions</code></td>
+<td><code>account</code>, <code>ticker</code></td>
+<td>실제 수량, 평균가, stop, target, highest, trailing stop</td>
+</tr>
+<tr>
+<td><code>minute_monitor_runs</code></td>
+<td><code>trade_date</code>, <code>minute_bucket</code></td>
+<td>1분 실행 heartbeat, 처리 종목, 오류</td>
+</tr>
+<tr>
+<td><code>risk_snapshots</code></td>
+<td><code>session_id</code>, <code>ticker</code></td>
+<td>주문 당시 리스크·포트폴리오 한도 판정</td>
+</tr>
+<tr>
+<td><code>audit_events</code></td>
+<td>event UUID</td>
+<td>모든 상태 전이와 운영자 조치</td>
+</tr>
+</tbody>
+</table>
+<p>브로커의 실제 잔고와 주문내역을 source of truth로 삼고 로컬 DB는 제어·감사 상태로 사용한다. 불일치가 발견되면 신규 매수를 막고 reconcile을 먼저 수행한다.</p>
+<h2 id="11-안전장치">11. 안전장치</h2>
+<h3 id="필수-제어">필수 제어</h3>
+<ul>
+<li><code>KIS_ENABLE_TRADING=false</code>를 기본값으로 유지하고 paper 환경에서 충분히 검증한다.</li>
+<li>일일 최대 손실, 일일 최대 주문 수, 종목당 최대 재시도 횟수를 둔다.</li>
+<li>동일 종목·방향 중복 주문을 idempotency key로 차단한다.</li>
+<li>미체결 매도 주문이 있으면 같은 포지션에 추가 매도를 내지 않는다.</li>
+<li>시세가 일정 시간 이상 stale이면 자동 주문 대신 알림과 안전 상태로 전환한다.</li>
+<li>API 연속 오류, DB 오류, 잔고 불일치 시 신규 매수를 차단하는 circuit breaker를 둔다.</li>
+<li>수동 <code>kill_switch</code>와 <code>buy_only_disabled</code>를 별도로 둔다.</li>
+<li>주문 timeout 뒤에는 재주문 전에 반드시 주문내역을 조회한다.</li>
+<li>거래정지, 관리종목, 가격제한, VI 및 비정상 스프레드 처리 정책을 둔다.</li>
+</ul>
+<h3 id="kill-switch-수준">Kill switch 수준</h3>
+<table>
+<thead>
+<tr>
+<th>상태</th>
+<th>신규 매수</th>
+<th>보호성 매도</th>
+<th>용도</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>NORMAL</code></td>
+<td>허용</td>
+<td>허용</td>
+<td>정상 운영</td>
+</tr>
+<tr>
+<td><code>BUY_DISABLED</code></td>
+<td>차단</td>
+<td>허용</td>
+<td>데이터·모델·한도 문제</td>
+</tr>
+<tr>
+<td><code>DEGRADED</code></td>
+<td>차단</td>
+<td>가능하면 허용</td>
+<td>일부 API 장애 또는 stale quote</td>
+</tr>
+<tr>
+<td><code>HALTED</code></td>
+<td>차단</td>
+<td>운영자 정책</td>
+<td>심각한 불일치·중복 주문 위험</td>
+</tr>
+</tbody>
+</table>
+<p>보호성 매도까지 일괄 차단하면 위험이 커질 수 있으므로 신규 매수 차단과 전체 주문 차단을 분리한다.</p>
+<h2 id="12-기존-코드에서-필요한-주요-변경">12. 기존 코드에서 필요한 주요 변경</h2>
+<table>
+<thead>
+<tr>
+<th>영역</th>
+<th>현재 상태</th>
+<th>제안 변경</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>스케줄링</td>
+<td>없음</td>
+<td>거래 캘린더 기반 scheduler 서비스 추가</td>
+</tr>
+<tr>
+<td>그래프</td>
+<td>단일 종목 분석·BUY 중심</td>
+<td>pre-open, opening-buy coordinator, minute-monitor, EOD 그래프로 분리</td>
+</tr>
+<tr>
+<td>시세</td>
+<td><code>get_current_price</code>, 일봉 다운로드</td>
+<td>여러 보유종목 batch quote 및 1분 OHLC provider 추가</td>
+</tr>
+<tr>
+<td>PositionManager</td>
+<td><code>process_daily_bar()</code></td>
+<td><code>process_minute_bar()</code>와 trigger/order execution 분리</td>
+</tr>
+<tr>
+<td>주문 상태</td>
+<td>단일 <code>OrderResult</code></td>
+<td>주문 intent, broker order, fill 상태 머신 추가</td>
+</tr>
+<tr>
+<td>포지션 상태</td>
+<td>Paper는 메모리, KIS 메타데이터도 메모리</td>
+<td>stop/target/highest/trailing 영속화</td>
+</tr>
+<tr>
+<td>SELL 라우팅</td>
+<td>분석 그래프의 SELL은 no-trade</td>
+<td>장중 감시 전용 sell order subgraph 추가</td>
+</tr>
+<tr>
+<td>로그</td>
+<td>CSV 거래 로그</td>
+<td>구조화 audit log + DB + 알림 추가</td>
+</tr>
+<tr>
+<td>장애 복구</td>
+<td>프로세스 메모리 의존</td>
+<td>시작 시 broker reconcile 및 idempotent resume</td>
+</tr>
+<tr>
+<td>API 호출</td>
+<td>종목별 호출 중심</td>
+<td>KIS rate limit을 고려한 batch/queue/throttle</td>
+</tr>
+</tbody>
+</table>
+<h2 id="13-권장-모듈-구조">13. 권장 모듈 구조</h2>
+<pre class="hljs"><code><div>trading/
+├─ scheduler.py                  # 거래일·세션별 job 실행
+├─ calendar.py                   # KRX 캘린더와 특별 개장일
+├─ service.py                    # 프로세스 lifecycle, health, shutdown
+├─ state_store.py                # DB 트랜잭션과 checkpoint
+├─ idempotency.py                # minute/job/order 중복 방지
+├─ alerts.py                     # 오류·주문·PnL 알림
+├─ graphs/
+│  ├─ pre_open_graph.py
+│  ├─ opening_buy_graph.py
+│  ├─ analysis_subgraph.py
+│  ├─ position_monitor_graph.py
+│  └─ post_close_graph.py
+├─ nodes/
+│  ├─ session_nodes.py
+│  ├─ candidate_nodes.py
+│  ├─ risk_nodes.py
+│  ├─ order_nodes.py
+│  ├─ monitor_nodes.py
+│  └─ reconcile_nodes.py
+├─ market_data/
+│  ├─ quote_provider.py
+│  └─ minute_bar_provider.py
+└─ models/
+   ├─ session.py
+   ├─ order.py
+   └─ monitor.py
+</div></code></pre>
+<h2 id="14-구현-단계-제안">14. 구현 단계 제안</h2>
+<h3 id="phase-1-paper-dry-run">Phase 1: Paper dry-run</h3>
+<ul>
+<li>거래 캘린더와 scheduler</li>
+<li>opening-buy graph와 minute-monitor graph</li>
+<li>SQLite state store</li>
+<li>1분 가상 시세 replay</li>
+<li>주문 없이 <code>DRY_RUN</code> intent와 trigger만 기록</li>
+</ul>
+<h3 id="phase-2-paper-execution">Phase 2: Paper execution</h3>
+<ul>
+<li>PaperBroker의 1분 시세 업데이트</li>
+<li>stop/target/trailing 매도 체결</li>
+<li>프로세스 재시작·중복 실행·부분 실패 테스트</li>
+<li>일일 리포트와 알림</li>
+</ul>
+<h3 id="phase-3-kis-모의투자">Phase 3: KIS 모의투자</h3>
+<ul>
+<li>KIS 주문·체결·미체결 조회 상태 머신</li>
+<li>rate limit, timeout, 재조회 및 취소 정책</li>
+<li>실제 장중 1분 shadow monitoring</li>
+<li>paper 판단과 KIS 결과 대조</li>
+</ul>
+<h3 id="phase-4-제한된-실전-운영">Phase 4: 제한된 실전 운영</h3>
+<ul>
+<li>소액·소수 종목·낮은 일일 주문 한도</li>
+<li>수동 승인 또는 단계적 자동승인</li>
+<li>kill switch 훈련과 장애 대응 runbook</li>
+<li>충분한 운영 로그 검증 후 점진 확대</li>
+</ul>
+<h2 id="15-테스트-시나리오">15. 테스트 시나리오</h2>
+<table>
+<thead>
+<tr>
+<th>시나리오</th>
+<th>기대 결과</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>휴장일 또는 특별 개장시간</td>
+<td>매수·감시 job이 올바른 세션시간을 사용</td>
+</tr>
+<tr>
+<td>스케줄러가 같은 분을 두 번 호출</td>
+<td>두 번째 invocation은 idempotent skip</td>
+</tr>
+<tr>
+<td>개장 전 데이터가 stale</td>
+<td>신규 매수 차단, 기존 포지션 감시는 유지</td>
+</tr>
+<tr>
+<td>stop과 target이 같은 1분봉에서 모두 충족</td>
+<td>보수적으로 stop 우선</td>
+</tr>
+<tr>
+<td>gap-down으로 stop 아래에서 시작</td>
+<td>stop 값이 아닌 실제 가능한 가격 정책으로 매도</td>
+</tr>
+<tr>
+<td>주문 timeout 후 실제로는 접수됨</td>
+<td>주문내역 재조회로 중복 주문 방지</td>
+</tr>
+<tr>
+<td>부분 체결</td>
+<td>체결수량만 포지션·현금·보호가격에 반영</td>
+</tr>
+<tr>
+<td>프로세스가 장중 재시작</td>
+<td>broker reconcile 후 마지막 minute 다음부터 재개</td>
+</tr>
+<tr>
+<td>시세 API 연속 실패</td>
+<td>circuit breaker, 신규 매수 차단, 경고 발생</td>
+</tr>
+<tr>
+<td>일일 손실한도 초과</td>
+<td>신규 매수 차단 및 정의된 청산 정책 적용</td>
+</tr>
+<tr>
+<td>DB와 브로커 포지션 불일치</td>
+<td>자동 매수 중단 후 reconcile 상태로 전환</td>
+</tr>
+</tbody>
+</table>
+<h2 id="16-핵심-설계-결정-요약">16. 핵심 설계 결정 요약</h2>
+<ol>
+<li>장기 실행과 시간 제어는 scheduler가 담당한다.</li>
+<li>LangGraph는 한 번 호출될 때 종료되는 결정 workflow로 사용한다.</li>
+<li>개장 매수와 1분 포지션 감시는 별도의 그래프로 분리한다.</li>
+<li>브로커 주문·체결 내역이 실제 포지션의 source of truth다.</li>
+<li>stop, target, highest, trailing stop과 주문 intent를 영속화한다.</li>
+<li>중복 주문 방지와 재시작 복구를 첫 구현 단계부터 포함한다.</li>
+<li>신규 매수 차단과 보호성 매도 차단을 서로 다른 kill switch로 관리한다.</li>
+<li>실거래 전에 dry-run → paper → KIS virtual → 제한된 real 순으로 검증한다.</li>
+</ol>
+<h2 id="17-관련-기존-구현">17. 관련 기존 구현</h2>
+<ul>
+<li>종목 분석 및 매수 그래프: <code>multiagent_graph.py</code></li>
+<li>포트폴리오 한도: <code>portfolio_manager.py</code></li>
+<li>ATR 포지션 크기: <code>risk/risk_engine.py</code></li>
+<li>일봉 손절·익절·trailing: <code>paper/position_manager.py</code></li>
+<li>브로커 인터페이스: <code>broker/base.py</code></li>
+<li>Paper 브로커: <code>broker/paper.py</code></li>
+<li>KIS 브로커: <code>broker/kis.py</code></li>
+<li>거래 로그: <code>paper/trade_logger.py</code></li>
+</ul>
+<p>이 문서는 운영 아키텍처 제안이며 자동매매의 수익성이나 안정성을 보장하지 않는다. 실전 적용 전에는 주문·체결·장애·재시작·휴장일·특별 개장시간을 포함한 충분한 paper 및 모의투자 검증이 필요하다.</p>
+
+</body>
+</html>
