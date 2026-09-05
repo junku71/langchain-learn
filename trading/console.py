@@ -98,7 +98,7 @@ class TradingConsole:
  [포트폴리오 관리]
     8. Reconciliation
     9. 잔고 및 보유종목 조회    10. 오늘의 Top10 추천 및 결과저장
-    11. 보유 및 Top10추천종목 리밸런싱 제안 및 승인 후 주문예약
+    11. 보유 및 Top10 추천종목 리밸런싱 제안 및 승인 후 주문예약
 
  [설정관리]
     12. 시스템 실행 상태
@@ -827,13 +827,13 @@ class TradingConsole:
             return
         print(f"\n[오늘의 Top10 pick - {scope}]")
         print(table(
-            ["순위", "종목코드", "종목명", "시장", "섹터", "후보소스", "종합", "기술", "기본", "뉴스", "수급", "핵심 근거"],
+            ["순위", "종목코드", "종목명", "시장", "섹터", "종합", "기술", "기본", "뉴스", "수급", "ML score", "핵심 근거"],
             [[
                 item["rank"], item["ticker"], item["name"], item["market"],
-                item["sector"], item.get("candidate_source", "-"),
-                f"{item['total_score']:.1f}",
+                item["sector"], f"{item['total_score']:.1f}",
                 f"{item['technical_score']:.1f}", f"{item['fundamental_score']:.1f}",
                 f"{item['news_score']:.1f}", f"{item['flow_score']:.1f}",
+                f"{float(item.get('ml_score', 0)):.4f}",
                 item["recommendation_reason"],
             ] for item in recommendations],
         ))

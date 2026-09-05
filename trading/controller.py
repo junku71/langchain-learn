@@ -101,21 +101,18 @@ class TradingController:
     def ml_filter_enabled(self) -> bool:
         if self.context.config.market_region == "US":
             return False
-        return self.context.store.get_bool_control(
-            "ml_filter_enabled", self.context.config.ml_filter_enabled
-        )
+        return True
 
     def toggle_ml_filter(self) -> bool:
         if self.context.config.market_region == "US":
             raise TradingControlError(
                 "미국시장용 ML 모델이 아직 없으므로 US 모드에서는 ML Filter를 사용할 수 없습니다."
             )
-        enabled = not self.ml_filter_enabled()
-        self.context.store.set_control("ml_filter_enabled", enabled)
+        self.context.store.set_control("ml_filter_enabled", True)
         self.context.store.audit(
-            "ML_FILTER_CHANGED", "ml_filter_enabled", {"enabled": enabled}
+            "ML_FILTER_CHANGED", "ml_filter_enabled", {"enabled": True}
         )
-        return enabled
+        return True
 
     def account_snapshot(self) -> tuple[dict, dict]:
         positions = self.context.broker.get_positions()
@@ -955,8 +952,9 @@ class TradingController:
         progress=None,
     ) -> list[dict]:
         scope = universe_scope.strip().upper()
+        selected_limit = self.context.config.recommendation_final_limit
         recommendations = self.recommendation_service.top_recommendations(
-            self.now().date(), limit=10, universe_scope=universe_scope,
+            self.now().date(), limit=selected_limit, universe_scope=universe_scope,
             refresh=refresh, progress=progress
         )
         if recommendations:

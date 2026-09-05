@@ -894,6 +894,172 @@ def test_top_recommendations_market_scope_filters_and_separates_cache(tmp_path):
     ) == kospi
 
 
+def test_top_recommendations_refresh_ignores_stale_session_candidates(tmp_path):
+    class FreshCandidates:
+        def candidates(self, trade_date, per_market):
+            return [
+                {"ticker": "005930.KS", "name": "삼성전자", "market": "KOSPI", "sector": "반도체", "ml_score": 0.99, "classification_probability": 0.99, "ml_rank": 1},
+                {"ticker": "000660.KS", "name": "SK하이닉스", "market": "KOSPI", "sector": "반도체", "ml_score": 0.95, "classification_probability": 0.95, "ml_rank": 2},
+            ]
+
+    class EmptyNews:
+        def collect(self, ticker):
+            return {
+                "naver_news": [], "naver_earnings_news": [], "yahoo_news": [],
+                "earnings_features": {},
+            }
+
+    service, _, store = _service(tmp_path, candidate_provider=FreshCandidates())
+    trade_date = datetime(2025, 1, 6).date()
+    session_id = f"{trade_date.isoformat()}:{service.context.config.strategy_version}"
+    store.upsert_session(
+        session_id,
+        trade_date.isoformat(),
+        service.context.config.strategy_version,
+        "SESSION_READY",
+        buy_enabled=True,
+        payload={"candidates": [{"ticker": "OLD1.KS", "market": "KOSPI", "ml_score": 0.1, "classification_probability": 0.1, "ml_rank": 1}]},
+    )
+
+    recommendation = RecommendationService(
+        service.context,
+        technical_fn=lambda ticker: {"score": 60, "signal": "NEUTRAL", "indicators": {"RSI": 50}},
+        fundamental_fn=lambda ticker: {"score": 60, "signal": "NEUTRAL"},
+        flow_fn=lambda ticker: {"score": 60, "signal": "NEUTRAL"},
+        news_service=EmptyNews(),
+    )
+
+    results = recommendation.top_recommendations(
+        trade_date, universe_scope="KOSPI", refresh=True
+    )
+
+    assert {item["ticker"] for item in results} == {"005930.KS", "000660.KS"}
+    assert all(item["ticker"] != "OLD1.KS" for item in results)
+
+
+def test_top_recommendations_analyzes_universe_then_ml_filters_top30(tmp_path):
+    class Candidates:
+        def candidates(self, trade_date, per_market):
+            assert per_market == 100
+            return [
+                {
+                    "ticker": f"{index:06d}.KS",
+                    "name": f"stock-{index}",
+                    "market": "KOSPI",
+                    "sector": "TEST",
+                    # Reverse the factor order so the test can prove that ML is
+                    # applied only after the factor top-30 has been formed.
+                    "ml_score": index / 100,
+                    "classification_probability": index / 100,
+                    "ml_rank": 40 - index,
+                }
+                for index in range(1, 41)
+            ]
+
+    class EmptyNews:
+        def collect(self, ticker):
+            return {
+                "naver_news": [], "naver_earnings_news": [], "yahoo_news": [],
+                "earnings_features": {},
+            }
+
+    service, _, store = _service(tmp_path, candidate_provider=Candidates())
+    store.set_control("ml_filter_enabled", True)
+    analyzed = []
+
+    def technical(ticker):
+        index = int(ticker.split(".", 1)[0])
+        analyzed.append(ticker)
+        return {"score": 100 - index, "signal": "NEUTRAL", "indicators": {"RSI": 50}}
+
+    recommendation = RecommendationService(
+        service.context,
+        technical_fn=technical,
+        fundamental_fn=lambda ticker: {"score": 50, "signal": "NEUTRAL"},
+        flow_fn=lambda ticker: {"score": 50, "signal": "NEUTRAL"},
+        news_service=EmptyNews(),
+    )
+
+    results = recommendation.top_recommendations(
+        datetime(2025, 1, 6).date(), universe_scope="KOSPI", refresh=True
+    )
+
+    assert len(analyzed) == 40
+    assert len(results) == 10
+    assert [item["ticker"] for item in results] == [
+        f"{index:06d}.KS" for index in range(30, 20, -1)
+    ]
+
+
+def test_technical_recommendation_reason_contains_detailed_indicators():
+    reason = RecommendationService._technical_reason({
+        "signal": "BULLISH",
+        "indicators": {
+            "RSI": 61.2,
+            "ADX": 27.4,
+            "DI_PLUS": 31.5,
+            "DI_MINUS": 18.1,
+            "MACD": 125.6789,
+            "MACD_SIGNAL": 110.1234,
+            "volume_ratio": 1.82,
+            "MA5": 71000,
+            "MA20": 69000,
+            "MA60": 65000,
+            "ATR": 1350.5,
+        },
+    })
+
+    assert "RSI 61.2" in reason
+    assert "ADX 27.4" in reason
+    assert "DI+ 31.5" in reason
+    assert "DI- 18.1" in reason
+    assert "MACD 125.679" in reason
+    assert "Volume Ratio 1.82" in reason
+
+
+def test_kr_top_recommendations_ignore_legacy_disabled_ml_control(tmp_path):
+    class Candidates:
+        def candidates(self, trade_date, per_market):
+            return [{
+                "ticker": "005930.KS",
+                "name": "삼성전자",
+                "market": "KOSPI",
+                "sector": "전기·전자",
+                "ml_score": 0.8123,
+                "classification_probability": 0.77,
+                "ml_rank": 1,
+            }]
+
+    class EmptyNews:
+        def collect(self, ticker):
+            return {
+                "naver_news": [], "naver_earnings_news": [], "yahoo_news": [],
+                "earnings_features": {},
+            }
+
+    service, _, store = _service(tmp_path, candidate_provider=Candidates())
+    store.set_control("ml_filter_enabled", False)
+    recommendation = RecommendationService(
+        service.context,
+        technical_fn=lambda ticker: {
+            "score": 60, "signal": "NEUTRAL", "indicators": {"RSI": 50}
+        },
+        fundamental_fn=lambda ticker: {"score": 60, "signal": "NEUTRAL"},
+        flow_fn=lambda ticker: {"score": 60, "signal": "NEUTRAL"},
+        news_service=EmptyNews(),
+    )
+
+    results = recommendation.top_recommendations(
+        datetime(2025, 1, 6).date(), universe_scope="KOSPI", refresh=True
+    )
+
+    assert results[0]["ml_score"] == 0.8123
+    assert results[0]["classification_probability"] == 0.77
+    event = store.list_audit_events(limit=1)[0]
+    assert event["payload"]["candidate_source"] == "ML_SNAPSHOT"
+    assert event["payload"]["ml_filter_enabled"] is True
+
+
 def test_console_top10_passes_selected_market_scope(tmp_path, monkeypatch, capsys):
     service, _, _ = _service(tmp_path)
     console = TradingConsole(TradingController(service))

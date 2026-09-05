@@ -28,7 +28,6 @@ from ml.config import (
     MODEL_REPORT_PATH,
     OOS_PREDICTIONS_PATH,
     PREDICTION_HORIZON,
-    RF_WEIGHT as CONFIG_RF_WEIGHT,
     TOP_SELECTION_SIZE_PER_MARKET,
     TOP_SELECTION_PATH,
 )
@@ -41,9 +40,130 @@ MODEL_PATH = MODEL_DIR / "korea_top200_ensemble.joblib"
 MODEL_VERSION = 8
 TEST_SESSIONS = 126
 WALK_FORWARD_STEP = 21
+THREE_MONTH_HORIZON = 63
+TRAIN_MONTHS = 24
+VALIDATION_MONTHS = 3
+WALK_FORWARD_STEP_MONTHS = 3
 CLASSIFIER_WEIGHT = LGBM_CLASSIFIER_WEIGHT
 RANKER_WEIGHT = LGBM_RANKER_WEIGHT
-RF_WEIGHT = CONFIG_RF_WEIGHT
+
+
+def add_3m_targets(panel: pd.DataFrame) -> pd.DataFrame:
+    panel = panel.sort_values(["ticker", "date"]).copy()
+    horizon = THREE_MONTH_HORIZON
+
+    panel["future_return_3M"] = (
+        panel.groupby("ticker")["Close"].transform(
+            lambda s: s.shift(-horizon) / s - 1
+        )
+    )
+
+    if "kospi_future_return" in panel.columns and "kosdaq_future_return" in panel.columns:
+        market_name = panel.get("market", pd.Series("KOSPI", index=panel.index))
+        benchmark = panel["kospi_future_return"].where(
+            market_name.ne("KOSDAQ"), panel["kosdaq_future_return"]
+        )
+    else:
+        benchmark = 0.0
+
+    panel["future_excess_return_3M"] = panel["future_return_3M"] - benchmark
+    panel["target_3M"] = (panel["future_excess_return_3M"] > 0.0).astype("Int64")
+    panel["rank_target_3M"] = (
+        panel.groupby("date")["future_excess_return_3M"]
+        .rank(method="average", pct=True)
+        .mul(9)
+        .round()
+        .astype("Int64")
+    )
+    return panel
+
+
+def make_rolling_folds(
+    panel: pd.DataFrame,
+    train_months: int = TRAIN_MONTHS,
+    valid_months: int = VALIDATION_MONTHS,
+    step_months: int = WALK_FORWARD_STEP_MONTHS,
+):
+    dates = pd.DatetimeIndex(sorted(panel["date"].dropna().unique()))
+    train_days = train_months * 21
+    valid_days = valid_months * 21
+    step_days = step_months * 21
+
+    folds = []
+    for start in range(0, len(dates) - train_days - valid_days + 1, step_days):
+        train_slice = dates[start:start + train_days]
+        valid_slice = dates[start + train_days:start + train_days + valid_days]
+
+        train = panel[panel["date"].isin(train_slice)].copy()
+        valid = panel[panel["date"].isin(valid_slice)].copy()
+
+        if train.empty or valid.empty:
+            continue
+        folds.append((train, valid))
+    return folds
+
+
+def train_lgbm_rank_folds(panel: pd.DataFrame):
+    panel = add_3m_targets(panel)
+    feature_cols = [column for column in FEATURE_COLUMNS if column in panel.columns]
+    if not feature_cols:
+        raise ValueError("Feature columns not found")
+
+    fold_results = []
+    for index, (train, valid) in enumerate(make_rolling_folds(panel), 1):
+        X_train = train[feature_cols].copy().fillna(train[feature_cols].median())
+        y_train = train["target_3M"].astype(int)
+
+        X_valid = valid[feature_cols].copy().fillna(train[feature_cols].median())
+        y_valid = valid["target_3M"].astype(int)
+
+        model = LGBMClassifier(
+            objective="binary",
+            class_weight="balanced",
+            n_estimators=400,
+            learning_rate=0.03,
+            num_leaves=31,
+            max_depth=-1,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            random_state=42,
+            n_jobs=-1,
+            verbosity=-1,
+        )
+
+        model.fit(X_train, y_train)
+
+        probability = model.predict_proba(X_valid)[:, 1]
+
+        valid_df = valid.copy()
+        valid_df["probability"] = probability
+        valid_df["rank_score"] = (
+            valid_df.groupby("date")["probability"]
+            .rank(method="average", pct=True)
+            .fillna(0.5)
+        )
+        valid_df["ml_score"] = (
+            CLASSIFIER_WEIGHT * valid_df["probability"]
+            + RANKER_WEIGHT * valid_df["rank_score"]
+        )
+        pred = (valid_df["ml_score"] >= 0.5).astype(int)
+
+        auc = roc_auc_score(y_valid, valid_df["ml_score"])
+        pr_auc = average_precision_score(y_valid, valid_df["ml_score"])
+        acc = accuracy_score(y_valid, pred)
+
+        fold_results.append({
+            "fold": index,
+            "train_start": train["date"].min(),
+            "train_end": train["date"].max(),
+            "valid_start": valid["date"].min(),
+            "valid_end": valid["date"].max(),
+            "AUC": auc,
+            "PR_AUC": pr_auc,
+            "ACC": acc,
+        })
+
+    return fold_results
 
 
 def resolve_stock(stock_name_or_ticker: str) -> tuple[str, str]:
@@ -118,15 +238,22 @@ def _cross_sectional_rank(values: np.ndarray, dates: pd.Series) -> np.ndarray:
 
 def walk_forward_splits(panel: pd.DataFrame):
     dates = pd.DatetimeIndex(sorted(panel["date"].dropna().unique()))
-    if len(dates) <= TEST_SESSIONS + PREDICTION_HORIZON + 60:
-        raise ValueError("Panel needs more history for purged 4.5y/0.5y evaluation")
-    first_test_index = len(dates) - TEST_SESSIONS
-    for fold_start in range(first_test_index, len(dates), WALK_FORWARD_STEP):
-        fold_end = min(fold_start + WALK_FORWARD_STEP, len(dates))
-        train_end_index = fold_start - PREDICTION_HORIZON
-        train = panel[panel["date"] < dates[train_end_index]].copy()
-        test_dates = dates[fold_start:fold_end]
-        test = panel[panel["date"].isin(test_dates)].copy()
+    train_days = TRAIN_MONTHS * 21
+    valid_days = VALIDATION_MONTHS * 21
+    step_days = WALK_FORWARD_STEP_MONTHS * 21
+
+    if len(dates) < train_days + valid_days:
+        raise ValueError(
+            "Panel is too short for a 24-month train + 3-month validation walk-forward setup"
+        )
+
+    for start in range(0, len(dates) - train_days - valid_days + 1, step_days):
+        train_slice = dates[start:start + train_days]
+        valid_slice = dates[start + train_days:start + train_days + valid_days]
+
+        train = panel[panel["date"].isin(train_slice)].copy()
+        test = panel[panel["date"].isin(valid_slice)].copy()
+
         if not train.empty and not test.empty:
             yield train, test
 
@@ -146,10 +273,12 @@ def _fit_models(
     train: pd.DataFrame,
     *,
     progress_label: str | None = None,
-) -> tuple[Any, Any, Any]:
-    ordered = train.sort_values(["date", "ticker"])
+) -> tuple[Any, Any]:
+    ordered = train.sort_values(["date", "ticker"]).copy()
     X = ordered[FEATURE_COLUMNS]
-    y = ordered["target"].astype(int)
+    target_column = "target_3M" if "target_3M" in ordered else "target"
+    y = ordered[target_column].astype(int)
+    rank_target_column = "rank_target_3M" if "rank_target_3M" in ordered else "rank_target"
     label = f"{progress_label} " if progress_label else ""
 
     step_started = time.monotonic()
@@ -168,7 +297,7 @@ def _fit_models(
         print(f"{label}LightGBM ranker training...", flush=True)
     ranker = create_ranker().fit(
         X,
-        ordered["rank_target"].astype(int),
+        ordered[rank_target_column].astype(int),
         group=_rank_groups(ordered),
     )
     if progress_label:
@@ -178,39 +307,23 @@ def _fit_models(
             flush=True,
         )
 
-    step_started = time.monotonic()
-    if progress_label:
-        print(f"{label}Random Forest training...", flush=True)
-    random_forest = create_random_forest().fit(X, y)
-    if progress_label:
-        print(
-            f"{label}Random Forest done "
-            f"({_format_duration(time.monotonic() - step_started)})",
-            flush=True,
-        )
-    return classifier, ranker, random_forest
+    return classifier, ranker
 
 
 def _predict_components(
-    models: tuple[Any, Any, Any],
+    models: tuple[Any, Any],
     frame: pd.DataFrame,
 ) -> pd.DataFrame:
-    classifier, ranker, random_forest = models
+    classifier, ranker = models
     ordered = frame.sort_values(["date", "ticker"]).copy()
     X = ordered[FEATURE_COLUMNS]
     ordered["lgbm_probability"] = classifier.predict_proba(X)[:, 1]
-    ordered["rf_probability"] = random_forest.predict_proba(X)[:, 1]
-    classification_weight = CLASSIFIER_WEIGHT + RF_WEIGHT
-    ordered["classification_probability"] = (
-        CLASSIFIER_WEIGHT * ordered["lgbm_probability"]
-        + RF_WEIGHT * ordered["rf_probability"]
-    ) / classification_weight
+    ordered["classification_probability"] = ordered["lgbm_probability"]
     rank_raw = ranker.predict(X)
     ordered["return_rank"] = _cross_sectional_rank(rank_raw, ordered["date"])
     ordered["ml_score"] = (
         CLASSIFIER_WEIGHT * ordered["lgbm_probability"]
         + RANKER_WEIGHT * ordered["return_rank"]
-        + RF_WEIGHT * ordered["rf_probability"]
     )
     return ordered
 
@@ -220,11 +333,12 @@ def _safe_auc(target: pd.Series, prediction: pd.Series) -> float | None:
 
 
 def _mean_daily_ndcg(frame: pd.DataFrame, k: int = 10) -> float | None:
+    target_column = "future_excess_return_3M" if "future_excess_return_3M" in frame else "future_excess_return_10D"
     scores = []
     for _, group in frame.groupby("date"):
         if len(group) < 2:
             continue
-        relevance = group["future_excess_return_10D"].rank(method="average").to_numpy()
+        relevance = group[target_column].rank(method="average").to_numpy()
         prediction = group["ml_score"].to_numpy()
         scores.append(float(ndcg_score([relevance], [prediction], k=min(k, len(group)))))
     return float(np.mean(scores)) if scores else None
@@ -242,36 +356,35 @@ def dataset_fingerprint(panel: pd.DataFrame) -> str:
     return hashlib.sha256(digest).hexdigest()
 
 
-def _top_selection_metrics(frame: pd.DataFrame, top: int = 10) -> dict[str, float | None]:
+def _top_selection_metrics(frame: pd.DataFrame, top: int = 15) -> dict[str, float | None]:
+    target_column = "future_excess_return_3M" if "future_excess_return_3M" in frame else "future_excess_return_10D"
     group_columns = ["date", "market"] if "market" in frame else ["date"]
     selected = frame.sort_values(
         [*group_columns, "ml_score"], ascending=[True] * len(group_columns) + [False]
     ).groupby(group_columns, sort=False).head(top)
     if selected.empty:
-        return {"top10_mean_excess_return": None, "top10_hit_rate": None}
-    returns = selected["future_excess_return_10D"]
+        return {"top15_mean_excess_return": None, "top15_hit_rate": None}
+    returns = selected[target_column]
     return {
-        "top10_mean_excess_return": float(returns.mean()),
-        "top10_hit_rate": float(returns.gt(0).mean()),
+        "top15_mean_excess_return": float(returns.mean()),
+        "top15_hit_rate": float(returns.gt(0).mean()),
     }
 
 
-def _feature_importance(models: tuple[Any, Any, Any]) -> pd.DataFrame:
-    classifier, ranker, random_forest = models
+def _feature_importance(models: tuple[Any, Any]) -> pd.DataFrame:
+    classifier, ranker = models
     values = {
         "feature": FEATURE_COLUMNS,
         "lgbm_classifier": classifier.feature_importances_,
         "lgbm_ranker": ranker.feature_importances_,
-        "random_forest": random_forest.named_steps["model"].feature_importances_,
     }
     result = pd.DataFrame(values)
-    for column in ("lgbm_classifier", "lgbm_ranker", "random_forest"):
+    for column in ("lgbm_classifier", "lgbm_ranker"):
         total = result[column].sum()
         result[column] = result[column] / total if total else 0.0
     result["weighted_importance"] = (
         CLASSIFIER_WEIGHT * result["lgbm_classifier"]
         + RANKER_WEIGHT * result["lgbm_ranker"]
-        + RF_WEIGHT * result["random_forest"]
     )
     return result.sort_values("weighted_importance", ascending=False)
 
@@ -297,10 +410,12 @@ def train_market_ensemble(
         feature_panel = create_panel_features(price_panel, economy_df, universe)
     if "training_universe" in feature_panel:
         feature_panel = feature_panel[feature_panel["training_universe"].fillna(False)].copy()
-    labelled = feature_panel.dropna(subset=["target", "future_excess_return_10D"])
+    feature_panel = add_3m_targets(feature_panel)
+    labelled = feature_panel.dropna(subset=["target_3M", "future_excess_return_3M"])
     evaluations = []
     first_train_rows = 0
-    total_folds = (TEST_SESSIONS + WALK_FORWARD_STEP - 1) // WALK_FORWARD_STEP
+    folds = list(walk_forward_splits(labelled))
+    total_folds = len(folds)
     total_training_steps = total_folds + 1  # Walk-forward folds plus final fit.
     if progress:
         first_date = pd.Timestamp(labelled["date"].min()).date()
@@ -314,7 +429,7 @@ def train_market_ensemble(
             f"Plan: {total_folds} walk-forward folds + 1 final model fit",
             flush=True,
         )
-    for fold_number, (train, test) in enumerate(walk_forward_splits(labelled), 1):
+    for fold_number, (train, test) in enumerate(folds, 1):
         fold_started = time.monotonic()
         if fold_number == 1:
             first_train_rows = len(train)
@@ -356,22 +471,19 @@ def train_market_ensemble(
     selection_metrics = _top_selection_metrics(evaluation)
     metrics = {
         "lgbm_classifier_auc": _safe_auc(
-            evaluation["target"], evaluation["lgbm_probability"]
+            evaluation["target_3M"], evaluation["lgbm_probability"]
         ),
-        "random_forest_auc": _safe_auc(
-            evaluation["target"], evaluation["rf_probability"]
-        ),
-        "ensemble_auc": _safe_auc(evaluation["target"], evaluation["ml_score"]),
-        "ensemble_pr_auc": float(average_precision_score(evaluation["target"], evaluation["ml_score"])),
+        "ensemble_auc": _safe_auc(evaluation["target_3M"], evaluation["ml_score"]),
+        "ensemble_pr_auc": float(average_precision_score(evaluation["target_3M"], evaluation["ml_score"])),
         "classification_brier": float(brier_score_loss(
-            evaluation["target"], evaluation["classification_probability"]
+            evaluation["target_3M"], evaluation["classification_probability"]
         )),
         "ensemble_accuracy": float(
-            accuracy_score(evaluation["target"], evaluation["classification_probability"] >= 0.5)
+            accuracy_score(evaluation["target_3M"], evaluation["classification_probability"] >= 0.5)
         ),
         "rank_spearman": float(
             evaluation["return_rank"].corr(
-                evaluation["future_excess_return_10D"], method="spearman"
+                evaluation["future_excess_return_3M"], method="spearman"
             )
         ),
         "ndcg_at_10": _mean_daily_ndcg(evaluation, 10),
@@ -379,7 +491,7 @@ def train_market_ensemble(
         "test_rows": len(evaluation),
         "test_start": str(evaluation["date"].min().date()),
         "walk_forward_folds": len(evaluations),
-        "walk_forward_step": WALK_FORWARD_STEP,
+        "walk_forward_step": WALK_FORWARD_STEP_MONTHS * 21,
         **selection_metrics,
     }
 
@@ -402,7 +514,8 @@ def train_market_ensemble(
         latest = latest[latest["prediction_universe"].fillna(False)]
     latest_scored = _predict_components(final_models, latest)
     prediction_columns = [column for column in (
-        "ticker", "name", "market", "sector", "lgbm_probability", "return_rank", "rf_probability",
+        "ticker", "name", "market", "sector",
+        "lgbm_probability", "return_rank",
         "classification_probability", "ml_score",
     ) if column in latest_scored]
     latest_predictions = latest_scored[prediction_columns].sort_values(
@@ -424,16 +537,15 @@ def train_market_ensemble(
         "models": {
             "lgbm_classifier": final_models[0],
             "lgbm_ranker": final_models[1],
-            "random_forest": final_models[2],
         },
         "latest_predictions": latest_predictions.set_index("ticker").to_dict("index"),
         "top_selection": top_selection.to_dict("records"),
         "metadata": {
             "model_version": MODEL_VERSION,
-            "algorithm": "LGBMClassifier+LGBMRanker+RandomForestClassifier",
+            "algorithm": "LGBMClassifier+LGBMRanker",
             "trained_through": str(pd.Timestamp(latest_date).date()),
             "trained_at": datetime.now(timezone.utc).isoformat(),
-            "prediction_horizon": PREDICTION_HORIZON,
+            "prediction_horizon": THREE_MONTH_HORIZON,
             "feature_columns": FEATURE_COLUMNS,
             "universe_size": int(universe["ticker"].nunique()),
             "universe_hash": _universe_hash(universe),
@@ -441,7 +553,6 @@ def train_market_ensemble(
             "weights": {
                 "lgbm_classifier": CLASSIFIER_WEIGHT,
                 "lgbm_ranker": RANKER_WEIGHT,
-                "random_forest": RF_WEIGHT,
             },
             "metrics": metrics,
         },
@@ -459,8 +570,8 @@ def train_market_ensemble(
             FEATURE_IMPORTANCE_PATH, index=False, encoding="utf-8-sig"
         )
         write_frame(evaluation[[column for column in (
-            "date", "ticker", "target", "future_excess_return_10D", "lgbm_probability",
-            "rf_probability", "classification_probability", "return_rank", "ml_score",
+            "date", "ticker", "target_3M", "future_excess_return_3M",
+            "lgbm_probability", "classification_probability", "return_rank", "ml_score",
             "walk_forward_fold",
         ) if column in evaluation]], OOS_PREDICTIONS_PATH)
         top_selection.to_csv(TOP_SELECTION_PATH, index=False, encoding="utf-8-sig")
@@ -471,6 +582,63 @@ def train_market_ensemble(
         )
     artifact["model_path"] = str(MODEL_PATH)
     return artifact
+
+
+def summarize_training_report(
+    artifact: dict[str, Any] | None = None,
+    *,
+    output_path: str | Path | None = None,
+) -> dict[str, Any]:
+    if artifact is None:
+        artifact = train_market_ensemble(save=False, progress=False)
+
+    metadata = artifact.get("metadata", {})
+    metrics = metadata.get("metrics", {})
+    weights = metadata.get("weights", {
+        "lgbm_classifier": CLASSIFIER_WEIGHT,
+        "lgbm_ranker": RANKER_WEIGHT,
+    })
+
+    summary = {
+        "model_version": metadata.get("model_version"),
+        "trained_through": metadata.get("trained_through"),
+        "prediction_horizon_days": int(metadata.get("prediction_horizon", THREE_MONTH_HORIZON)),
+        "train_months": TRAIN_MONTHS,
+        "validation_months": VALIDATION_MONTHS,
+        "walk_forward_step_months": WALK_FORWARD_STEP_MONTHS,
+        "ensemble_weights": {
+            "classifier": float(weights.get("lgbm_classifier", CLASSIFIER_WEIGHT)),
+            "ranker": float(weights.get("lgbm_ranker", RANKER_WEIGHT)),
+        },
+        "metrics": {
+            "AUC": metrics.get("ensemble_auc"),
+            "PR_AUC": metrics.get("ensemble_pr_auc"),
+            "ACC": metrics.get("ensemble_accuracy"),
+            "top15_mean_excess_return": metrics.get("top15_mean_excess_return"),
+            "top15_hit_rate": metrics.get("top15_hit_rate"),
+            "lgbm_classifier_auc": metrics.get("lgbm_classifier_auc"),
+            "rank_spearman": metrics.get("rank_spearman"),
+            "ndcg_at_10": metrics.get("ndcg_at_10"),
+        },
+        "top_selection_count": len(artifact.get("top_selection", [])),
+        "notes": [
+            "Train period: 24 months",
+            "Validation period: 3 months",
+            "Walk-forward step: 3 months",
+            "Target horizon: 63 trading days (approx. 3 months)",
+            "Final score: 0.70 * classifier_probability + 0.30 * rank_score",
+        ],
+    }
+
+    if output_path is not None:
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    return summary
 
 
 def train_and_save_model() -> dict[str, Any]:

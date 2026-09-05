@@ -7,22 +7,22 @@ from ml.config import FEATURE_PANEL_PATH
 from ml.features import FEATURE_COLUMNS
 from ml.storage import read_frame
 
-# -----------------------------
-# 1) 1개월 future target 만들기
-# -----------------------------
+# Two-model ensemble weights
+# classifier = 0.70, ranker = 0.30
+# - classifier: absolute probability signal
+# - ranker: cross-sectional relative ranking signal
+CLASSIFIER_WEIGHT = 0.70
+RANKER_WEIGHT = 0.30
+
 def add_3m_targets(panel: pd.DataFrame) -> pd.DataFrame:
     panel = panel.sort_values(["ticker", "date"]).copy()
-
-    # 3개월 보유기간 = 약 63 거래일
     horizon = 63
 
-    # 종목별 3개월 후 수익률
     panel["future_return_3M"] = (
         panel.groupby("ticker")["Close"]
         .transform(lambda s: s.shift(-horizon) / s - 1)
     )
 
-    # 시장 벤치마크
     if "kospi_future_return" in panel.columns and "kosdaq_future_return" in panel.columns:
         market_name = panel.get("market", pd.Series("KOSPI", index=panel.index))
         benchmark = panel["kospi_future_return"].where(
@@ -33,23 +33,10 @@ def add_3m_targets(panel: pd.DataFrame) -> pd.DataFrame:
 
     panel["future_excess_return_3M"] = panel["future_return_3M"] - benchmark
     panel["target_3M"] = (panel["future_excess_return_3M"] > 0.0).astype(int)
-
     return panel
 
-# -----------------------------
-# 2) rolling train/valid split
-# -----------------------------
-def make_rolling_folds(
-    panel: pd.DataFrame,
-    train_months: int = 36,
-    valid_months: int = 3,
-    step_months: int = 3,
-):
-    """
-    train_months = 24 (약 3년)
-    valid_months = 3 (약 3개월)
-    step_months = 3 (매 3개월마다 fold 이동)
-    """
+
+def make_rolling_folds(panel: pd.DataFrame, train_months=24, valid_months=3, step_months=3):
     dates = pd.DatetimeIndex(sorted(panel["date"].dropna().unique()))
     train_days = train_months * 21
     valid_days = valid_months * 21
@@ -65,26 +52,18 @@ def make_rolling_folds(
 
         if train.empty or valid.empty:
             continue
-
         folds.append((train, valid))
-
     return folds
 
-# -----------------------------
-# 3) 모델 훈련/평가
-# -----------------------------
-def train_lgbm_folds(panel: pd.DataFrame):
-    panel = add_3m_targets(panel)
 
-    # 사용할 feature 컬럼
+def train_lgbm_rank_folds(panel: pd.DataFrame):
+    panel = add_3m_targets(panel)
     feature_cols = [c for c in FEATURE_COLUMNS if c in panel.columns]
     if not feature_cols:
-        raise ValueError("Feature columns not found in panel")
-
-    folds = make_rolling_folds(panel)
+        raise ValueError("Feature columns not found")
 
     fold_results = []
-    for idx, (train, valid) in enumerate(folds, 1):
+    for idx, (train, valid) in enumerate(make_rolling_folds(panel), 1):
         X_train = train[feature_cols].copy().fillna(train[feature_cols].median())
         y_train = train["target_3M"].astype(int)
 
@@ -108,10 +87,22 @@ def train_lgbm_folds(panel: pd.DataFrame):
         model.fit(X_train, y_train)
 
         prob = model.predict_proba(X_valid)[:, 1]
-        pred = (prob >= 0.5).astype(int)
 
-        auc = roc_auc_score(y_valid, prob)
-        pr_auc = average_precision_score(y_valid, prob)
+        valid_df = valid.copy()
+        valid_df["probability"] = prob
+        valid_df["rank_score"] = (
+            valid_df.groupby("date")["probability"]
+            .rank(method="average", pct=True)
+            .fillna(0.5)
+        )
+
+        # composite score: probability + relative ranking
+        valid_df["ml_score"] = CLASSIFIER_WEIGHT * valid_df["probability"] 
+        + RANKER_WEIGHT * valid_df["rank_score"]
+        pred = (valid_df["ml_score"] >= 0.5).astype(int)
+
+        auc = roc_auc_score(y_valid, valid_df["ml_score"])
+        pr_auc = average_precision_score(y_valid, valid_df["ml_score"])
         acc = accuracy_score(y_valid, pred)
 
         fold_results.append({
@@ -127,14 +118,12 @@ def train_lgbm_folds(panel: pd.DataFrame):
 
     return fold_results
 
-# -----------------------------
-# 4) 실행 예시
-# -----------------------------
+
 if __name__ == "__main__":
     panel = read_frame(FEATURE_PANEL_PATH)
     panel["date"] = pd.to_datetime(panel["date"])
 
-    results = train_lgbm_folds(panel)
+    results = train_lgbm_rank_folds(panel)
 
     for row in results:
         print(row)

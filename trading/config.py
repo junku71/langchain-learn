@@ -35,10 +35,12 @@ class LiveTradingConfig:
     market_close_at: time = time(15, 30)
     post_close_at: time = time(15, 40)
     monitor_interval_seconds: int = 60
-    ml_filter_enabled: bool = False
+    ml_filter_enabled: bool = True
     ml_probability_threshold: float = 0.65
-    max_candidates_per_market: int = 10
+    max_candidates_per_market: int = 15
     recommendation_universe_per_market: int = 100
+    recommendation_analysis_shortlist: int = 30
+    recommendation_final_limit: int = 10
     max_new_positions_per_day: int = 4
     max_daily_orders: int = 20
     max_order_retries: int = 1
@@ -95,10 +97,16 @@ class LiveTradingConfig:
                 os.getenv("TRADING_ML_PROBABILITY_THRESHOLD", "0.65")
             ),
             max_candidates_per_market=int(
-                os.getenv("TRADING_MAX_CANDIDATES_PER_MARKET", "10")
+                os.getenv("TRADING_MAX_CANDIDATES_PER_MARKET", "15")
             ),
             recommendation_universe_per_market=int(
                 os.getenv("TRADING_RECOMMENDATION_UNIVERSE_PER_MARKET", "100")
+            ),
+            recommendation_analysis_shortlist=int(
+                os.getenv("TRADING_RECOMMENDATION_ANALYSIS_SHORTLIST", "30")
+            ),
+            recommendation_final_limit=int(
+                os.getenv("TRADING_RECOMMENDATION_FINAL_LIMIT", "10")
             ),
             max_new_positions_per_day=int(
                 os.getenv("TRADING_MAX_NEW_POSITIONS_PER_DAY", "4")

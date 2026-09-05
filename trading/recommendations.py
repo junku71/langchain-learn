@@ -36,6 +36,15 @@ def _score(value, default: float = 50.0) -> float:
     return round(max(0.0, min(100.0, number)), 1) if math.isfinite(number) else default
 
 
+def _ml_probability(value, default: float = 0.0) -> float:
+    """Keep model scores in [0, 1] without factor-score rounding loss."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return round(max(0.0, min(1.0, number)), 6) if math.isfinite(number) else default
+
+
 class RecommendationService:
     WEIGHTS = {
         "technical_score": 0.30,
@@ -72,7 +81,7 @@ class RecommendationService:
         self,
         trade_date: date,
         *,
-        limit: int = 10,
+        limit: int | None = None,
         universe_scope: str = "BOTH",
         refresh: bool = False,
         progress: Callable[[int, int, str], None] | None = None,
@@ -83,33 +92,39 @@ class RecommendationService:
         if scope not in allowed:
             raise ValueError(f"universe_scope must be one of {sorted(allowed)}")
         date_text = trade_date.isoformat()
+        final_limit = limit or self.context.config.recommendation_final_limit
+        analysis_shortlist = self.context.config.recommendation_analysis_shortlist
         version = self.context.config.strategy_version
         if self.context.config.market_region == "US":
             version = f"{version}:US"
-        ml_enabled = self.context.config.market_region == "KR" and self.context.store.get_bool_control(
-            "ml_filter_enabled", self.context.config.ml_filter_enabled
-        )
+
+        # KR menu 10 always uses the trained ML model.  TradingController also
+        # exposes KR ML Filter as always enabled, so do not let a legacy false
+        # value in system_controls silently switch recommendations to the
+        # market-cap fallback (whose ML scores are necessarily all zero).
+        ml_enabled = self.context.config.market_region == "KR"
         candidate_source = "ML_SNAPSHOT" if ml_enabled else "MARKET_CAP_UNIVERSE"
         cache_version = (
             f"{version}:recommendation:{candidate_source.lower()}:"
             f"n{self.context.config.recommendation_universe_per_market}:"
+            f"analysis-{analysis_shortlist}:final-{final_limit}:"
+            "detail-v2:ml-score-v2:"
             f"scope-{scope.lower()}"
         )
         if not refresh:
             cached = self.context.store.get_recommendations(date_text, cache_version)
             if cached is not None:
-                return cached[:limit]
+                return cached[:final_limit]
 
         if ml_enabled:
-            session_id = f"{date_text}:{version}"
-            session = self.context.store.get_session(session_id)
-            candidates = list(
-                ((session or {}).get("payload") or {}).get("candidates", [])
+            # Menu 10 needs a broad universe here.  The pre-open session only
+            # stores the small order-entry candidate set, so reusing it would
+            # cap recommendation analysis before the four-factor shortlist.
+            candidates = self._ml_snapshot_candidates(
+                trade_date,
+                limit=None,
+                per_market=self.context.config.recommendation_universe_per_market,
             )
-            if not candidates:
-                candidates = self.context.candidate_provider.candidates(
-                    trade_date, self.context.config.max_candidates_per_market
-                )
         else:
             candidates = self._market_cap_candidates(scope)
         if scope != "BOTH":
@@ -119,6 +134,7 @@ class RecommendationService:
             ]
         if not candidates:
             return []
+
         for candidate in candidates:
             candidate["candidate_source"] = candidate_source
 
@@ -129,25 +145,79 @@ class RecommendationService:
             if progress:
                 progress(index, total, ticker)
             results.append(self._analyze(candidate))
-        results.sort(
-            key=lambda item: (item["total_score"], item.get("ml_score", 0)),
-            reverse=True,
-        )
-        for rank, item in enumerate(results, 1):
+        # Stage 1: technical/fundamental/news/flow analysis chooses 30 stocks.
+        factor_shortlist = sorted(
+            results, key=lambda item: item["total_score"], reverse=True
+        )[:analysis_shortlist]
+
+        # Stage 2: only the 30-stock shortlist is passed through the ML filter.
+        # When the operator disables ML Filter, preserve the factor ordering.
+        if ml_enabled:
+            factor_shortlist.sort(
+                key=lambda item: (
+                    float(item.get("ml_score", 0.0)),
+                    float(item.get("classification_probability", 0.0)),
+                ),
+                reverse=True,
+            )
+        selected = factor_shortlist[:final_limit]
+        for rank, item in enumerate(selected, 1):
             item["rank"] = rank
-        selected = results[:limit]
         self.context.store.save_recommendations(date_text, cache_version, selected)
         self.context.store.audit(
             "TOP_RECOMMENDATIONS_CREATED",
             date_text,
             {
                 "candidate_count": total,
+                "analysis_shortlist_count": len(factor_shortlist),
                 "selected_count": len(selected),
                 "candidate_source": candidate_source,
+                "ml_filter_enabled": ml_enabled,
                 "universe_scope": scope,
             },
         )
         return selected
+
+    def _ml_snapshot_candidates(
+        self,
+        trade_date: date,
+        *,
+        limit: int | None = None,
+        per_market: int | None = None,
+    ) -> list[dict]:
+        candidates = self.context.candidate_provider.candidates(
+            trade_date,
+            per_market or self.context.config.recommendation_universe_per_market,
+        )
+        missing_scores = [
+            str(candidate.get("ticker", "UNKNOWN"))
+            for candidate in candidates
+            if candidate.get("ml_score") is None
+        ]
+        if missing_scores:
+            preview = ", ".join(missing_scores[:5])
+            raise ValueError(
+                "ML prediction score is missing for recommendation candidates: "
+                f"{preview}"
+            )
+        for candidate in candidates:
+            candidate.setdefault(
+                "classification_probability", candidate["ml_score"]
+            )
+            candidate.setdefault("ml_rank", 9999)
+        if limit is not None:
+            candidates = sorted(
+                candidates,
+                key=lambda item: (
+                    float(item.get("ml_score", 0.0)),
+                    float(item.get("classification_probability", 0.0)),
+                ),
+                reverse=True,
+            )[:limit]
+        for candidate in candidates:
+            candidate.setdefault("candidate_source", "ML_SNAPSHOT")
+            candidate.setdefault("model_version", 0)
+        return candidates
 
     def _market_cap_candidates(self, universe_scope: str = "BOTH") -> list[dict]:
         if self.context.config.market_region == "US":
@@ -212,10 +282,7 @@ class RecommendationService:
         ticker = str(candidate["ticker"])
         technical_score, technical_reason = self._factor(
             lambda: self.technical_fn(ticker),
-            lambda value: (
-                f"{value.get('signal', 'NEUTRAL')} RSI "
-                f"{float((value.get('indicators') or {}).get('RSI', 0)):.1f}"
-            ),
+            self._technical_reason,
         )
         fundamental_score, fundamental_reason = self._factor(
             lambda: self.fundamental_fn(ticker),
@@ -260,7 +327,11 @@ class RecommendationService:
             "candidate_source": candidate.get("candidate_source", "UNKNOWN"),
             "total_score": total,
             **scores,
-            "ml_score": _score(candidate.get("ml_score", 0), 0),
+            "ml_score": _ml_probability(candidate.get("ml_score", 0)),
+            "classification_probability": _ml_probability(
+                candidate.get("classification_probability", 0)
+            ),
+            "ml_rank": int(candidate.get("ml_rank", 9999)),
             "technical_reason": technical_reason,
             "fundamental_reason": fundamental_reason,
             "news_reason": news_reason,
@@ -269,6 +340,34 @@ class RecommendationService:
                 f"{label} {score:.1f}" for label, score in strongest
             ),
         }
+
+    @staticmethod
+    def _technical_reason(value: dict) -> str:
+        """Format the technical indicators used by the recommendation score."""
+        indicators = value.get("indicators") or {}
+
+        def number(*keys: str, digits: int = 2) -> str:
+            for key in keys:
+                raw = indicators.get(key)
+                if raw is not None:
+                    try:
+                        return f"{float(raw):.{digits}f}"
+                    except (TypeError, ValueError):
+                        return str(raw)
+            return "-"
+
+        return " · ".join([
+            str(value.get("signal", "NEUTRAL")),
+            f"RSI {number('RSI', digits=1)}",
+            f"ADX {number('ADX', digits=1)}",
+            f"DI+ {number('DI_PLUS', 'DI+', digits=1)}",
+            f"DI- {number('DI_MINUS', 'DI-', digits=1)}",
+            #f"MACD {number('MACD', digits=3)}",
+            f"MACD Signal {number('MACD_SIGNAL', digits=3)}",
+            f"Volume Ratio {number('VOLUME_RATIO', 'volume_ratio', digits=2)}",
+            # f"MA5/20/60 {number('MA5', digits=0)}/{number('MA20', digits=0)}/{number('MA60', digits=0)}",
+            f"ATR {number('ATR', digits=2)}",
+        ])
 
     @staticmethod
     def _news_score(data: dict) -> tuple[float, str]:

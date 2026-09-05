@@ -125,13 +125,17 @@ class ModelCandidateProvider:
         self.model_path = model_path
         self.panel_path = panel_path
 
-    def candidates(self, trade_date: date, per_market: int) -> list[dict]:
+    def load_artifact(self) -> tuple[dict, dict]:
         if not self.model_path.exists():
             raise ValueError(f"Trained model not found: {self.model_path}")
         artifact = joblib.load(self.model_path)
         metadata = artifact.get("metadata", {})
         if metadata.get("model_version") != MODEL_VERSION:
             raise ValueError("Model version is stale; retrain before live trading")
+        return artifact, metadata
+
+    def candidates(self, trade_date: date, per_market: int) -> list[dict]:
+        artifact, metadata = self.load_artifact()
         trained_through = pd.Timestamp(metadata["trained_through"]).date()
         if trained_through >= trade_date:
             raise ValueError("Model trained_through must precede the live trade date")
@@ -174,4 +178,7 @@ class ModelCandidateProvider:
         ranked["sector"] = ranked.get(
             "sector", pd.Series(index=ranked.index, dtype=object)
         ).fillna("UNKNOWN")
+        ranked["candidate_source"] = "ML_SNAPSHOT"
+        ranked["model_version"] = int(metadata.get("model_version", MODEL_VERSION))
+        ranked["trained_through"] = metadata.get("trained_through")
         return ranked.to_dict("records")

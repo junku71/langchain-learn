@@ -21,7 +21,7 @@ FEATURE_COLUMNS = [
     *MOMENTUM_FEATURES, *TECHNICAL_FEATURES, *VOLUME_FEATURES, *FLOW_FEATURES,
     *FUNDAMENTAL_FEATURES, *MARKET_FEATURES, *CROSS_SECTION_FEATURES,
 ]
-TARGET_COLUMNS = ["future_return_10D", "future_excess_return_10D", "target"]
+TARGET_COLUMNS = ["future_return_10D", "future_excess_return_10D", "target", "future_return_3M", "future_excess_return_3M", "target_3M"]
 
 
 def _series(frame: pd.DataFrame, name: str | None) -> pd.Series:
@@ -108,6 +108,9 @@ def create_panel_features(
     panel["future_return_10D"] = panel.groupby("ticker")["Close"].transform(
         lambda x: x.shift(-horizon) / x - 1
     )
+    panel["future_return_3M"] = panel.groupby("ticker")["Close"].transform(
+        lambda x: x.shift(-63) / x - 1
+    )
     if "training_universe" in panel:
         panel = panel[panel["training_universe"].fillna(False)].copy()
     panel["sector"] = panel.get("sector", pd.Series(index=panel.index, dtype=object)).replace("UNKNOWN", np.nan)
@@ -129,9 +132,15 @@ def create_panel_features(
 
     market_name = panel["market"] if "market" in panel else pd.Series("KOSPI", index=panel.index)
     benchmark = panel["kospi_future_return"].where(market_name.ne("KOSDAQ"), panel["kosdaq_future_return"])
+
     panel["future_excess_return_10D"] = panel["future_return_10D"] - benchmark
+    panel["future_excess_return_3M"] = panel["future_return_3M"] - benchmark
+
     panel["target"] = (panel["future_excess_return_10D"] > EXCESS_RETURN_THRESHOLD).astype("Int64")
+    panel["target_3M"] = (panel["future_excess_return_3M"] > 0.0).astype("Int64")
+
     panel.loc[panel["future_excess_return_10D"].isna(), "target"] = pd.NA
+    panel.loc[panel["future_excess_return_3M"].isna(), "target_3M"] = pd.NA
 
     sector_key = panel.groupby(["date", "sector"], dropna=True)["ret_20"].mean().rename("sector_ret20").reset_index()
     panel = panel.merge(sector_key, on=["date", "sector"], how="left")

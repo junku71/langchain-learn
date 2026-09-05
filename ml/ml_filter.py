@@ -19,7 +19,7 @@ def _load_current_artifact(latest_session: str) -> dict[str, Any] | None:
             and metadata.get("trained_through") == latest_session
             and metadata.get("feature_columns") == FEATURE_COLUMNS
             and set(artifact.get("models", {}))
-            == {"lgbm_classifier", "lgbm_ranker", "random_forest"}
+            == {"lgbm_classifier", "lgbm_ranker"}
         )
         return artifact if valid else None
     except (KeyError, TypeError, ValueError, OSError):
@@ -46,7 +46,7 @@ def predict_up_probability(
             f"{ticker} is not in the trained KOSPI/KOSDAQ top-200 universe"
         )
     score = float(prediction["ml_score"])
-    probability = float(prediction.get("classification_probability", score))
+    probability = float(prediction.get("classification_probability", prediction.get("lgbm_probability", score)))
     ml_rank = int(prediction.get("ml_rank", 9999))
     metadata = artifact["metadata"]
     return {
@@ -58,7 +58,6 @@ def predict_up_probability(
         "ml_rank": ml_rank,
         "lgbm_probability": float(prediction["lgbm_probability"]),
         "return_rank": float(prediction["return_rank"]),
-        "rf_probability": float(prediction["rf_probability"]),
         "ml_pass": ml_rank <= 10,
         "model_reused": model_reused,
         "model_path": str(MODEL_PATH),

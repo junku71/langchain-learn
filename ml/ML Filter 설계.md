@@ -1,151 +1,273 @@
 
 
-## Machin Learning Target 
-	10영업일 뒤 상승확률 제일 높은 top 10 종목을 복수의 머신러닝알고리즘 사용하여 **Ranking** 으로 
-	Training Universe에서 매일 골라내는 것
-	입력 데이터는 
-	
+# ML Filter 설계(확정 코드 기준)
 
-## 알고리즘 
+## 1. 목표
 
-총 3개 모델
-```
-	Stock Selection Ranker=LGBM, 
-	Main=LGBM
-	Base=Random Forest
-```
-	
-| 모델                  | 종류     | Target                               | 역할            |   비중  |
-| --------------------- |   ------ | -------------------------------     | --------------- | ------- |
-| ① Random Forest       | **분류** | 10일 후 상승/초과수익 여부            | Baseline        |  0.2    |
-| ② LightGBM            | **분류** | 10일 후 상승/초과수익 여부            | Main prediction |  0.3    |
-| ③ LightGBM Ranker     | **랭킹** | 종목 간 미래(10영업일뒤)수익률 순위    | Stock Selection |  0.5    |
+현재 코드 기준의 ML Filter는 다음 목표를 가진다.
 
-	
-# 동작방식
-	10영업일 Stock Selection ML Filter에는 100~200종목 → 하나의 Global Model → 매일 종목별 Rank 방식이 더 적합하
-	
-	
-## Feature 개수
-	개수를 증가시키는 것보다 20-35개의 강한 Feature선택이 중요.
-	아래는 Feature의 그룹별 예시이고 중요도를 얘기한다.
-	
-| 그룹             | 핵심 feature                   |   중요도 |
-| --------------- | ------------------------------ | ----:   |
-| Momentum        | RET 5/20/60, relative momentum | ★★★★★ |
-| Trend           | MA20/60, ADX, RSI, BB, MACD    |  ★★★★ |
-| Volatility      | ATR, realized vol, gap         | ★★★★★ |
-| Volume          | volume ratio, turnover         |  ★★★★ |
-| 외국인           | 5/20D normalized net buy       | ★★★★★ |
-| 기관              5/20D normalized net buy       |  ★★★★ |
-| Sector          | sector relative strength       | ★★★★★ |
-| Market          | KOSPI trend, VKOSPI            | ★★★★★ |
-| Macro           | USD/KRW, SOX/Nasdaq            |  ★★★★ |
-| Fundamental     | ROE, PBR, earnings growth      |   ★★★ |
-| Cross-sectional | momentum/flow/value rank       | ★★★★★ |
+- 매일 거래일마다 point-in-time 데이터 기반으로 종목별 점수를 산출한다.
+- 같은 날짜의 종목들 사이에서 상대순위(`return_rank`)를 계산한다.
+- 최종적으로 `ml_score`를 기준으로 상위 종목을 선택한다.
+- 생산 환경에서는 Top 10 종목을 추천 후보로 사용한다.
 
-## Training Universe(100) & Prediction Universe(50) 정의
+핵심 목적은 단순히 “상승 확률을 예측”하는 것만이 아니라,
+“같은 날짜의 종목들 중 어디가 상대적으로 우수한가”를 함께 반영하는 것이다.
 
-Point-in-Time Universe
-```
-2018-01-02 → 그날의 Top 100
-2018-01-03 → 그날의 Top 100
-...
-2024-01-02 → 그날의 Top 100
-...
-2026-08-30 → 그날의 Top 100
+---
+
+## 2. 현재 확정된 모델 구조
+
+현재 코드에서 실제로 사용되는 모델은 2개다.
+
+1. LightGBM Classifier
+2. LightGBM Ranker
+
+과거에는 Random Forest를 넣은 3개 모델 실험이 있었지만,
+현재 운영/포팅 코드 기준으로는 RF를 제거하고 2개 모델 구조를 사용한다.
+
+| 모델 | 종류 | 입력 타깃 | 역할 | 비중 |
+| --- | --- | --- | --- | ---: |
+| LGBM Classifier | 분류 | `target` (상승 여부) | 절대 확률 생성 | 0.70 |
+| LGBM Ranker | 랭킹 | `rank_target` (동일 날짜 종목 내 상대 순위) | 상대적 우위 생성 | 0.30 |
+
+실제 구현은 다음과 같다.
+
+```python
+ordered["lgbm_probability"] = classifier.predict_proba(X)[:, 1]
+rank_raw = ranker.predict(X)
+ordered["return_rank"] = _cross_sectional_rank(rank_raw, ordered["date"])
+ordered["ml_score"] = (
+    CLASSIFIER_WEIGHT * ordered["lgbm_probability"]
+    + RANKER_WEIGHT * ordered["return_rank"]
+)
 ```
 
+즉,
 
+$$
+ml\_score = 0.70 \cdot p_{clf} + 0.30 \cdot rank\_score
+$$
+
+이다.
+
+---
+
+## 3. 타깃 정의
+
+### 3-1. 운영 코드의 기본 타깃
+현재 운영 코드의 표준 타깃은 `future_excess_return_10D` 기반이다.
+
+- 파일: [ml/features.py](ml/features.py)
+- 핵심 로직:
+
+```python
+panel["future_return_10D"] = panel.groupby("ticker")["Close"].transform(
+    lambda x: x.shift(-horizon) / x - 1
+)
+
+panel["future_excess_return_10D"] = panel["future_return_10D"] - benchmark
+panel["target"] = (panel["future_excess_return_10D"] > EXCESS_RETURN_THRESHOLD).astype("Int64")
 ```
-DATE        CODE     MktCapRank   InUniverse
-2025-01-02  005930       1          1
-2025-01-02  000660       2          1
-...
-2025-01-02  123456      99          1
-2025-01-02  654321     101          0
+
+여기서 `EXCESS_RETURN_THRESHOLD` 는 [ml/config.py](ml/config.py) 에 정의되며,
+현재 값은 0.03 (3%) 이다.
+
+즉,
+
+- 10영업일 뒤 초과수익률이 3% 이상이면 1
+- 그렇지 않으면 0
+
+으로 라벨링한다.
+
+### 3-2. 실험 코드의 3개월 타깃
+3개월 실험용 타깃도 별도로 준비되어 있다.
+
+- 파일: [ml/test/test_ML2.py](ml/test/test_ML2.py)
+- 실험 로직:
+
+```python
+panel["future_return_3M"] = (
+    panel.groupby("ticker")["Close"]
+    .transform(lambda s: s.shift(-63) / s - 1)
+)
+
+panel["future_excess_return_3M"] = panel["future_return_3M"] - benchmark
+panel["target_3M"] = (panel["future_excess_return_3M"] > 0.0).astype(int)
 ```
 
-Training Universe는 100종목, Prediction은 Top 50에 대해서만.
+3개월 실험은 "3개월 뒤 초과수익률이 양수인지"를 학습 타깃으로 보겠다는 의미다.
 
-## ML 입력 및 출력 데이터 스키마 
+다만 현재 프러덕션 설계는 기본적으로 10영업일 + 3% threshold를 표준으로 사용한다.
 
-### 예시
+---
 
-아래는유니버스가 100종목이고 Feature가 10개라고 가정했을 때 데이터의 모습을 예시한 것임.
+## 4. 입력 데이터 구성
 
-| Date | Stock  |  PER | PBR |  ROE | RSI | ADX | ATR% | RET20 |   외인수급 | SectorRS |
-| ---- | ------ | ---: | --: | ---: | --: | --: | ---: | ----: | -----: | -------: |
-| 8/1  | 삼성전자   | 18.2 | 1.5 |  9.1 |  63 |  25 |  2.1 |  5.2% |  0.32% |     0.71 |
-| 8/1  | SK하이닉스 | 11.3 | 2.4 | 22.1 |  71 |  32 |  3.4 | 12.1% |  0.81% |     0.94 |
-| 8/1  | 현대차    |  6.2 | 0.7 | 13.4 |  42 |  18 |  2.3 | -2.1% | -0.12% |     0.43 |
-| 8/1  | 한화에어로  | 25.3 | 5.2 | 19.8 |  68 |  37 |  4.1 | 15.3% |  0.47% |     0.89 |
-| 8/2  | 삼성전자   | 18.5 | 1.6 |  9.1 |  65 |  26 |  2.2 |  5.8% |  0.41% |     0.73 |
-| 8/2  | SK하이닉스 | 11.7 | 2.5 | 22.1 |  74 |  34 |  3.6 | 13.4% |  0.92% |     0.96 |
-| ...  | ...    |  ... | ... |  ... | ... | ... |  ... |   ... |    ... |      ... |
+FEATURE는 [ml/features.py](ml/features.py) 에 정의된 `FEATURE_COLUMNS`를 사용한다.
 
-이경우 10년치 (2500거래일) 데이터를 모은다고 가정했을 때
-100개 종목 × 2,500 거래일이면:
-$$ 100 \times 2500 = 250,000 rows $$
-가 됩니다.
-Feature가 50개라면 ML 입력 행렬 X는 대략:
-$$ X = 250,000 \times 50 $$
+실제 구성은 다음 그룹으로 나뉜다.
 
+### Momentum
+- `ret_5`, `ret_20`, `ret_60`
+- `sector_relative_momentum`
 
-### 입출력 변수 스키마 제안
-INPUT X
-────────────────────────────
-① Momentum (4)
-   RET5, RET20, RET60, RET20_SECTOR_RELATIVE
+### Technical
+- `rsi`, `adx`, `atr_pct`, `macd_pct`, `bollinger_position`, `realized_vol20`
 
-② Technical (5)
-   RSI, ADX, ATR%, MACD,Bollinger 
+### Volume / Liquidity
+- `volume_ratio`, `turnover`, `liquidity`
 
-③ Volume(3)
-   VolumeRatio, Turnover,liquidity
+### Flow
+- `foreign_5_pct`, `foreign_20_pct`
+- `institution_5_pct`, `institution_20_pct`
 
-④ Flow(4)
-   ForeignFlow5/20 Ratio normalized to MarketCap
-   InstitutionFlow5/20 Ratio normalized to MarketCap
+### Fundamental
+- `roe`, `pbr`, `pbr_sector_rank`, `per`, `per_sector_rank`, `ev_ebitda_rank`, `earnings_growth`
 
-⑤ Fundamental(6)
-   ROE
-   PBR, PBR sector rank
-   PER, PER sector rank
-   EV/EBITDA rank
+### Market / Macro
+- `kospi_trend`, `vkospi`, `usdkrw`, `nasdaq`, `sp500`, `sox`, `gold`, `oil`
 
-⑦ Market(8)
-   KOSPI 지수
-   NASDAQ 지수
-   S&P 지수
-   VKOSPI
-   USDKRW
-   EURKRW
-   금현물
-   유가
+### Cross-sectional ranking features
+- `momentum_rank`, `flow_rank`, `value_rank`
 
-⑧ Cross-sectional(3)
-   Momentum rank
-   Flow rank
-   Value rank
-   
-   
-────────────────────────────
-           ↓
-    Global LightGBM(비중0.3) + Random Forest(비중0.2) + LightGBM Ranker(비중0.5)
-           ↓
+핵심은 “섹터/시차/상대순위 기반 바이어스”를 줄이면서, 시계열과 cross-sectional 정보 둘 다 학습에 넣는 것이다.
 
-출력의 모습
-OUTPUT
-────────────────────────────
-Stock         ML Score ML Rank
-SK하이닉스       0.87   1
-한화에어로       0.84   2
-삼성전자         0.79   3
-...
-────────────────────────────
-           ↓
-       TOP 10~20
+---
+
+## 5. 학습 방식
+
+### 학습 유니버스
+현재 코드에서는 `feature_panel`에서 `training_universe` 조건을 사용해 학습 대상 관측치를 걸러낸다.
+
+- [ml/train_model.py](ml/train_model.py)
+
+```python
+if "training_universe" in feature_panel:
+    feature_panel = feature_panel[feature_panel["training_universe"].fillna(False)].copy()
+```
+
+이후 `labelled = feature_panel.dropna(subset=["target", "future_excess_return_10D"])` 로 학습 데이터만 남긴다.
+
+### 검증 방식
+시간순 검증이 사용된다.
+
+- `walk_forward_splits()`
+- `TEST_SESSIONS`, `WALK_FORWARD_STEP`
+
+즉, 무작위 split 대신 시계열 walk-forward를 쓰며,
+과거 데이터로 학습하고 이후 기간으로 검증하는 구조다.
+
+---
+
+## 6. 점수 산출 방식
+
+### Classifier 확률
+```python
+ordered["lgbm_probability"] = classifier.predict_proba(X)[:, 1]
+```
+
+### Ranker 순위
+```python
+rank_raw = ranker.predict(X)
+ordered["return_rank"] = _cross_sectional_rank(rank_raw, ordered["date"])
+```
+
+여기서 `return_rank`는 동시점 종목들 사이의 상대적 순위로, 0~1 범위의 percentile rank다.
+
+### 최종 ML Score
+```python
+ordered["ml_score"] = (
+    CLASSIFIER_WEIGHT * ordered["lgbm_probability"]
+    + RANKER_WEIGHT * ordered["return_rank"]
+)
+```
+
+- `CLASSIFIER_WEIGHT = 0.70`
+- `RANKER_WEIGHT = 0.30`
+
+이 조합은 단순히 절대 확률만 쓰는 대신,
+“같은 날짜 내 상대적 우위”를 반영해 투자 우선순위를 더 안정적으로 만든다.
+
+---
+
+## 7. 추천 후보 선정
+
+최종 스코어는 [ml/train_model.py](ml/train_model.py) 에서 다음처럼 정렬되고 시장별로 Top N을 뽑는다.
+
+```python
+latest_predictions = latest_scored[prediction_columns].sort_values(
+    "ml_score", ascending=False
+)
+
+latest_predictions["ml_rank"] = (
+    latest_predictions.groupby("market").cumcount() + 1
+)
+
+top_selection = latest_predictions.groupby("market", group_keys=False).head(
+    TOP_SELECTION_SIZE_PER_MARKET
+)
+```
+
+`TOP_SELECTION_SIZE_PER_MARKET` 는 기본적으로 10이다.
+
+즉, 각 시장별 상위 10개가 최종 추천 후보가 된다.
+
+---
+
+## 8. 출력 스키마
+
+최종 출력은 [ml/ml_filter.py](ml/ml_filter.py) 에서 다음 필드를 반환한다.
+
+```python
+{
+    "ticker": ticker,
+    "company_name": company_name,
+    "up_probability": probability,
+    "classification_probability": probability,
+    "ml_score": score,
+    "ml_rank": ml_rank,
+    "lgbm_probability": float(prediction["lgbm_probability"]),
+    "return_rank": float(prediction["return_rank"]),
+    "ml_pass": ml_rank <= 10,
+}
+```
+
+즉, 사용자/트레이딩 노드는 다음을 사용한다.
+
+- `ml_score`: 정렬 기준
+- `ml_rank`: 시장별 순위
+- `up_probability`: 예측 확률
+- `return_rank`: 상대적 우위
+
+---
+
+## 9. 최종 정리
+
+현재 코드 기준의 실전 ML Filter는 다음과 같이 요약할 수 있다.
+
+- 타깃: 10영업일 후 3% 초과수익 여부 (`target`)
+- 모델: LGBM Classifier + LGBM Ranker
+- 스코어: `0.7 * classifier_probability + 0.3 * cross_section_rank`
+- 후보 선택: 시장별 상위 10개
+- 운용 목적: Top 10 추천 + 매수 후보 필터링
+
+3개월 실험 버전은 별도 benchmark 스크립트에서 검증 가능하지만,
+현재 생산 코드의 확정 설계는 위 구조를 기준으로 운영된다.
+
+---
+
+## 10. 실험 vs 운영의 구분
+
+- 운영(기본): 10영업일 horizon, threshold 3%
+- 실험(benchmark): 3개월 horizon, positive target
+
+즉,
+
+- 운영은 “실전 투자 필터”에 맞춘 설계
+- 실험은 “신호 해석/모델 비교용 설계”
+
+로 구분된다.
 
 
 
